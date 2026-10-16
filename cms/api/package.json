@@ -1,0 +1,26 @@
+{
+  "name": "aurelia-cms-api",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch-path=src src/server.js",
+    "start": "node src/server.js",
+    "db:init": "node src/db/init.js",
+    "db:sql": "node src/db/export-sql.js",
+    "db:seed": "node src/db/seed.js",
+    "db:reset": "node src/db/seed.js --reset",
+    "admin:list": "node src/db/admin-user.js list",
+    "admin:reset": "node src/db/admin-user.js reset",
+    "test:smoke": "node src/db/smoke.js"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "cors": "^2.8.5",
+    "express": "^4.22.3",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.13",
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4"
+  }
+}

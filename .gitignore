@@ -1,0 +1,17 @@
+node_modules
+dist
+.vercel
+*.log
+.DS_Store
+Thumbs.db
+
+# secrets: only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# local embedded database and uploads (recreate with `npm run db:reset` in cms/api)
+cms/api/data/
+cms/api/uploads/*
+!cms/api/uploads/.gitkeep
+cms/api/private-uploads/

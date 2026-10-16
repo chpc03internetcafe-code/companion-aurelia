@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
+    { "source": "/uploads/(.*)", "destination": "/api" },
+    { "source": "/sitemap.xml", "destination": "/api/site/sitemap.xml" },
+    { "source": "/robots.txt", "destination": "/api/site/robots.txt" },
+    { "source": "/((?!assets/|aurelia-icon.svg).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/index.js": { "maxDuration": 30 }
+  }
+}

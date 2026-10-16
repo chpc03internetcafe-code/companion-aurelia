@@ -1,0 +1,121 @@
+// The Express app. Started locally by server.js and on Vercel by /api/index.js at the repo root.
+import './env.js';
+import express from 'express';
+import cors from 'cors';
+import multer from 'multer';
+import { dbKind, q } from './db/index.js';
+import { HttpError, wrap } from './lib/http.js';
+import { requireAdmin, requirePermission } from './lib/admin-auth.js';
+import { auditWrites } from './lib/audit.js';
+import { UPLOAD_DIR } from './lib/storage.js';
+import { mailConfigured } from './lib/mailer.js';
+import { loadSettings } from './services/settings.js';
+import { BOOKING_SOURCES, BOOKING_STATUSES, CONTACT_METHODS, INQUIRY_STATUSES as PROFILE_INQUIRY_STATUSES } from './services/bookings.js';
+import { MEMBER_PAYMENT_METHODS, MEMBERSHIP_KINDS, MEMBERSHIP_STATUSES } from './services/members.js';
+import { SORTS } from './services/profiles.js';
+import adminRoutes from './routes/admin.js';
+import auditRoutes from './routes/audit.js';
+import dashboardRoutes from './routes/dashboard.js';
+import bookingRoutes from './routes/bookings.js';
+import profileRoutes, { PROFILE_STATUSES } from './routes/profiles.js';
+import locationRoutes from './routes/locations.js';
+import memberRoutes from './routes/members.js';
+import vipRoutes from './routes/vip.js';
+import contentRoutes, { SECTION_TYPES } from './routes/content.js';
+import seoRoutes from './routes/seo.js';
+import inquiryRoutes, { INQUIRY_STATUSES, INQUIRY_SUBJECTS } from './routes/inquiries.js';
+import settingsRoutes from './routes/settings.js';
+import notificationRoutes from './routes/notifications.js';
+import siteRoutes from './routes/site.js';
+import accountRoutes from './routes/account.js';
+import companionRoutes from './routes/companion.js';
+import companionAdminRoutes from './routes/companions.js';
+
+const app = express();
+app.set('trust proxy', true);
+app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || true, credentials: true }));
+app.use(express.json({ limit: '1mb' }));
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
+
+app.get('/api/health', async (_req, res) => {
+  try {
+    await q('SELECT 1');
+    res.json({ ok: true, database: await dbKind(), email: mailConfigured() });
+  } catch (err) {
+    res.status(503).json({ ok: false, error: err.message });
+  }
+});
+
+// Shared option lists for the CMS forms.
+app.get('/api/meta', requireAdmin, wrap(async (_req, res) => {
+  const [categories, locations, tiers, s] = await Promise.all([
+    q('SELECT id, name, slug, is_active FROM categories ORDER BY sort_order, name'),
+    q(`SELECT l.id, l.name, l.slug, l.parent_id, l.is_published, pl.name AS parent_name FROM locations l LEFT JOIN locations pl ON pl.id = l.parent_id
+       ORDER BY COALESCE(pl.sort_order, l.sort_order), COALESCE(pl.name, l.name), l.parent_id NULLS FIRST, l.name`),
+    q('SELECT id, name, rank, price, duration_days, color, is_active FROM tiers ORDER BY rank, sort_order'),
+    loadSettings(),
+  ]);
+  res.json({
+    site: { siteName: s.siteName, logoText: s.logoText, currency: s.currency || 'PHP', slotMinutes: Number(s.slotMinutes) || 30 },
+    categories, locations, tiers,
+    bookingStatuses: BOOKING_STATUSES, profileInquiryStatuses: PROFILE_INQUIRY_STATUSES, bookingSources: BOOKING_SOURCES, contactMethods: CONTACT_METHODS,
+    profileStatuses: PROFILE_STATUSES, membershipStatuses: MEMBERSHIP_STATUSES, membershipKinds: MEMBERSHIP_KINDS, paymentMethods: MEMBER_PAYMENT_METHODS,
+    inquiryStatuses: INQUIRY_STATUSES, inquirySubjects: INQUIRY_SUBJECTS, sectionTypes: SECTION_TYPES, sorts: SORTS,
+    websiteUrl: process.env.SITE_URL || 'http://localhost:5173',
+  });
+}));
+
+// Public: website and member portal
+app.use('/api/site', siteRoutes);
+app.use('/api/account', accountRoutes);
+app.use('/api/companion', companionRoutes);
+
+// CMS: staff sign-in + role permission per section (View for GET, Manage for changes) + audit trail
+app.use('/api/admin', auditWrites('users'), adminRoutes); // sign-in events are logged in the route
+app.use('/api/dashboard', requireAdmin, dashboardRoutes);
+app.use('/api/bookings', requirePermission('bookings'), auditWrites('bookings'), bookingRoutes);
+app.use('/api/profiles', requirePermission('profiles'), auditWrites('profiles'), profileRoutes);
+app.use('/api/companions', requirePermission('profiles'), companionAdminRoutes);
+app.use('/api/locations', requirePermission('locations'), auditWrites('locations'), locationRoutes);
+app.use('/api/members', requirePermission('members'), auditWrites('members'), memberRoutes);
+app.use('/api/vip', requirePermission('vip'), auditWrites('vip'), vipRoutes);
+app.use('/api/content', requirePermission('content'), auditWrites('content'), contentRoutes);
+app.use('/api/seo', requirePermission('seo'), auditWrites('seo'), seoRoutes);
+app.use('/api/inquiries', requirePermission('inquiries'), auditWrites('inquiries'), inquiryRoutes);
+app.use('/api/settings', requirePermission('settings'), auditWrites('settings'), settingsRoutes);
+app.use('/api/notifications', requireAdmin, notificationRoutes);
+app.use('/api/audit', requirePermission('audit'), auditRoutes);
+
+app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found.')));
+
+// Postgres error codes → friendly API errors.
+// constraint names are uq_<table>_<column>; longest table names first so "member_sessions" wins over "members"
+const UNIQUE_TABLES = ['profile_change_requests', 'companion_accounts', 'companion_sessions', 'companion_tokens', 'collection_profiles', 'member_sessions', 'member_tokens', 'admin_sessions', 'content_pages', 'admin_roles', 'admin_users', 'memberships',
+  'collections', 'categories', 'locations', 'redirects', 'inquiries', 'profiles', 'bookings', 'members', 'tiers', 'posts'];
+const FIELD_LABELS = { email: 'email', slug: 'URL slug', name: 'name', from_path: '“From” path', reference: 'reference', member_no: 'member number', membership_no: 'membership number' };
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Each image must be 4 MB or smaller.' : err.code === 'LIMIT_FILE_COUNT' ? 'Too many files at once.' : err.message });
+  }
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Request body is not valid JSON.' });
+  if (err.code === '23505') {
+    const rest = String(err.constraint || '').replace(/^uq_/, '');
+    const table = UNIQUE_TABLES.find((t) => rest.startsWith(`${t}_`));
+    const col = table ? rest.slice(table.length + 1) : 'value';
+    const key = col.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+    const label = FIELD_LABELS[col] || col.replace(/_/g, ' ');
+    return res.status(409).json({ error: `This ${label} is already in use.`, details: { [key]: `This ${label} is already in use.` } });
+  }
+  if (err.code === '23503') {
+    if (/delete|update/i.test(err.message) && /still referenced/i.test(err.detail || '')) return res.status(409).json({ error: 'This record is still in use and can’t be deleted.' });
+    return res.status(422).json({ error: 'A selected reference (profile, location, tier…) is not valid.' });
+  }
+  if (err.code === '23514') return res.status(422).json({ error: 'Some values are out of range. Please check the form.' });
+  if (err.code === '22P02' || err.code === '22007' || err.code === '22008') return res.status(400).json({ error: 'Some values are in the wrong format.' });
+  const status = err.status || 500;
+  if (status >= 500) console.error(err);
+  res.status(status).json({ error: status >= 500 ? 'Server error. Check the API logs.' : err.message, details: err.details });
+});
+
+export default app;
