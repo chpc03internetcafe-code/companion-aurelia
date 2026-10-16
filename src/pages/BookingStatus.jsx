@@ -1,4 +1,5 @@
-// Booking status: look up with reference + email (or signed in), see the timeline, cancel or reschedule within the policy.
+// Booking status: look up with reference + email (or signed in), see the timeline, cancel or reschedule within the policy,
+// and chat with the companion once the booking is confirmed.
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
@@ -6,6 +7,7 @@ import { api, lookupEmail, qs } from '../utils/api';
 import { useSeo } from '../utils/seo';
 import { dateTime, dayLong, duration, money, time12, todayIso, WEEKDAYS } from '../utils/format';
 import { Field, Loading, PageHero, Photo, Status } from '../components/Common';
+import Chat from '../components/Chat';
 
 function Reschedule({ b, email, onDone, onCancel }) {
   const { toast } = useSite();
@@ -151,6 +153,12 @@ export default function BookingStatus() {
               </div>
             )}
           </div>
+          <div className="stack">
+          {b.chat && (
+            <Chat key={b.reference} path={`/site/bookings/${b.reference}/messages`} extra={form.email ? { email: form.email } : {}}
+              title={`Messages with ${b.profile.name}`} placeholder={`Write to ${b.profile.name}…`}
+              hint="Our concierge can read this chat to help if anything goes wrong. Please keep payments and personal details within the booking." />
+          )}
           <div className="panel">
             <h3>Status updates</h3>
             <ul className="timeline">
@@ -159,6 +167,7 @@ export default function BookingStatus() {
               ))}
             </ul>
             <p className="muted" style={{ fontSize: '0.84rem', marginBottom: 0 }}>We email you whenever the status changes. Requested {dateTime(b.createdAt)}.</p>
+          </div>
           </div>
         </div>
       </section>

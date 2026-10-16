@@ -12,6 +12,7 @@ import { dayAvailability, openDays } from '../services/availability.js';
 import {
   addEvent, assertTransition, BOOKING_SOURCES, CONTACT_METHODS, createBooking, loadBooking, loadEvents, moveBooking, parseFees, publicBooking, quote, SELECT_BOOKING, TRANSITIONS,
 } from '../services/bookings.js';
+import { readChat, sendChat } from '../services/chat.js';
 
 const router = Router();
 
@@ -84,7 +85,7 @@ router.post('/quote', wrap(async (req, res) => {
 async function detail(id) {
   const b = await loadBooking({ one }, 'b.id', id);
   if (!b) throw new HttpError(404, 'Booking not found.');
-  return { ...b, events: await loadEvents({ q }, id), transitions: TRANSITIONS[b.kind][b.status] || [] };
+  return { ...b, events: await loadEvents({ q }, id), transitions: TRANSITIONS[b.kind][b.status] || [], chat: b.kind === 'Booking' ? await readChat(b, 'Staff') : null };
 }
 
 router.get('/:id', wrap(async (req, res) => res.json(await detail(idParam(req)))));
@@ -219,6 +220,13 @@ router.post('/:id/notes', wrap(async (req, res) => {
   const after = await detail(id);
   if (visible && req.body.notify) await notify(bookingMessage(await loadSettings(), publicBooking(after), after.clientEmail, note));
   res.json(after);
+}));
+
+// Chat between the client and the companion: staff read it here and can write as the concierge.
+router.post('/:id/messages', wrap(async (req, res) => {
+  const b = await detail(idParam(req));
+  await sendChat(b, 'Concierge', req.body.body, req.admin.name);
+  res.status(201).json(await detail(b.id));
 }));
 
 router.delete('/:id', wrap(async (req, res) => {

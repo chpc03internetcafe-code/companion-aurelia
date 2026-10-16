@@ -237,6 +237,35 @@ export function companionNewRequest(site, a, b) {
   };
 }
 
+// ---------- Booking chat (no message text in the email, only a link back) ----------
+/** b: SELECT_BOOKING row. Sent for the first unread message, so a conversation doesn't flood the inbox. */
+export function chatMessageToClient(site, b) {
+  return {
+    to: b.clientEmail,
+    subject: `New message about your booking ${b.reference}`,
+    html: layout(site, {
+      heading: 'You have a new message',
+      intro: `Hi ${esc(firstName(b.clientName))}, there’s a new message in the chat for booking ${esc(b.reference)}.`,
+      cta: statusLink(b),
+      footnote: 'For your privacy the message itself isn’t included in this email. Open your booking to read and reply.',
+    }),
+    text: text([`Hi ${firstName(b.clientName)},`, `There’s a new message in the chat for booking ${b.reference}.`, statusLink(b)?.url]),
+  };
+}
+
+export function chatMessageToCompanion(site, a, b) {
+  return {
+    to: a.email,
+    subject: `New message about booking ${b.reference} — ${site.siteName}`,
+    html: layout(site, {
+      heading: 'You have a new message',
+      intro: `Hi ${esc(firstName(a.name))}, there’s a new message in the chat for booking ${esc(b.reference)}.`,
+      cta: { label: 'Open the companion portal', url: portalLink('/bookings') },
+    }),
+    text: text([`There’s a new message in the chat for booking ${b.reference}.`, portalLink('/bookings')]),
+  };
+}
+
 export function companionChangeDecided(site, a, { kind, approved, note }) {
   const what = kind === 'photo' ? 'new photo' : 'profile update';
   return {

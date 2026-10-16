@@ -24,6 +24,7 @@ import { loadSettings } from '../services/settings.js';
 import { addEvent, loadBooking, parseFees, publicBooking, SELECT_BOOKING } from '../services/bookings.js';
 import { loadSchedule, parseBlocks, parseTimeOff, saveSchedule, saveTimeOff } from '../services/schedule.js';
 import { DETAIL_FIELDS, detailsSchema } from '../services/companions.js';
+import { chatState, messageCounts, readChat, sendChat } from '../services/chat.js';
 
 const router = Router();
 const realm = REALMS.companion;
@@ -66,7 +67,9 @@ async function toCompanion(a) {
   const stats = await one(`SELECT
       (SELECT COUNT(*)::int FROM bookings WHERE profile_id = $1 AND kind = 'Booking' AND status = 'Pending' AND starts_at > ph_now()) AS pending_requests,
       (SELECT COUNT(*)::int FROM bookings WHERE profile_id = $1 AND kind = 'Booking' AND status = 'Confirmed' AND starts_at > ph_now()) AS upcoming,
-      (SELECT COUNT(*)::int FROM profile_change_requests WHERE profile_id = $1 AND status = 'Pending') AS pending_changes`, [a.profileId]);
+      (SELECT COUNT(*)::int FROM profile_change_requests WHERE profile_id = $1 AND status = 'Pending') AS pending_changes,
+      (SELECT COUNT(*)::int FROM booking_messages bm JOIN bookings b ON b.id = bm.booking_id
+        WHERE b.profile_id = $1 AND bm.sender <> 'Companion' AND bm.id > b.companion_seen_message_id) AS unread_messages`, [a.profileId]);
   return {
     id: a.id, email: a.email, name: a.displayName, twoStep: !!a.totpEnabledAt, lastLoginAt: a.lastLoginAt,
     profile: { id: a.profileId, slug: a.slug, status: a.profileStatus, photo: a.photo, awayUntil: a.awayUntil, awayNote: a.awayNote },
@@ -199,11 +202,12 @@ securityRoutes(router, realm, { account: (req) => req.companion, log: (req, a, a
 // ---------- Booking requests ----------
 // What a companion sees of a booking: no client email, phone or member details.
 const firstName = (n) => String(n || '').trim().split(/\s+/)[0];
-const forCompanion = (b) => ({
+const forCompanion = (b, counts = {}) => ({
   reference: b.reference, status: b.status, rateLabel: b.rateLabel, durationMinutes: b.durationMinutes, date: b.bookingDate, time: b.startTime,
   endDate: b.endDate, endTime: b.endTime, locationName: b.locationName, meetingPlace: b.meetingPlace, clientName: firstName(b.clientName),
   clientNotes: b.clientNotes, ratePrice: b.ratePrice, createdAt: b.createdAt, isMember: !!b.memberNo, rescheduleCount: b.rescheduleCount,
   canRespond: b.status === 'Pending' && `${b.bookingDate}T${b.startTime}` > phIsoNow(),
+  chat: chatState(b), messageCount: counts[b.id]?.total || 0, unreadMessages: counts[b.id]?.unread || 0,
 });
 const SELECT_MINE = SELECT_BOOKING;
 const phIsoNow = () => `${phDate()}T${fromMin(phMinutesNow())}`;
@@ -212,7 +216,8 @@ router.get('/me/bookings', wrap(async (req, res) => {
   const scope = { pending: "b.status = 'Pending' AND b.starts_at > ph_now()", upcoming: "b.status = 'Confirmed' AND b.starts_at > ph_now()", past: "b.starts_at <= ph_now() OR b.status NOT IN ('Pending','Confirmed')" }[req.query.scope] || 'TRUE';
   const order = req.query.scope === 'past' ? 'b.starts_at DESC' : 'b.starts_at ASC';
   const rows = await q(`${SELECT_MINE} WHERE b.profile_id = $1 AND b.kind = 'Booking' AND (${scope}) ORDER BY ${order} LIMIT 200`, [req.companion.profileId]);
-  res.json(rows.map(parseFees).map(forCompanion));
+  const counts = await messageCounts('Companion', 'b.profile_id', req.companion.profileId);
+  res.json(rows.map(parseFees).map((b) => forCompanion(b, counts)));
 }));
 
 async function myBooking(req) {
@@ -248,6 +253,19 @@ async function answer(req, res, accept) {
 }
 router.post('/me/bookings/:ref/accept', wrap((req, res) => answer(req, res, true)));
 router.post('/me/bookings/:ref/decline', wrap((req, res) => answer(req, res, false)));
+
+// Chat with the client (confirmed bookings). `after` = last message id the portal already has.
+router.get('/me/bookings/:ref/messages', wrap(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(await readChat(await myBooking(req), 'Companion', req.query.after));
+}));
+
+router.post('/me/bookings/:ref/messages', wrap(async (req, res) => {
+  const b = await myBooking(req);
+  await sendChat(b, 'Companion', req.body.body);
+  run('UPDATE profiles SET last_active_at = now() WHERE id = $1', [req.companion.profileId]).catch(() => {});
+  res.status(201).json(await readChat(b, 'Companion', req.body.after));
+}));
 
 // ---------- Availability (goes live straight away) ----------
 const availability = async (profileId) => {

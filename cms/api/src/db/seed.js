@@ -16,6 +16,7 @@ import { hashPassword } from '../lib/auth.js';
 import { addDays, fromMin, phDate, phMinutesNow, toMin, weekday } from '../lib/dates.js';
 import { saveImage } from '../lib/storage.js';
 import * as D from './seed-data.js';
+import { seedChat } from './seed-chat.js';
 
 // ---------- deterministic randomness ----------
 let state = 20261015;
@@ -378,11 +379,12 @@ export async function seedDemo({ log = console.log } = {}) {
 
     log(`✓ Demo data: ${profiles.length} profiles, ${Object.keys(loc).length} locations, ${D.tiers.length} tiers, ${members.length} members, ${bookingCount} bookings, ${D.posts.length} posts`);
   });
+  await seedChat({ log });
   log(`  (${((Date.now() - started) / 1000).toFixed(1)} s)`);
 }
 
 const TABLES = ['notification_reads', 'notifications', 'audit_log', 'admin_sessions', 'admin_users', 'admin_roles', 'inquiries', 'redirects', 'faqs', 'posts', 'content_pages',
-  'booking_events', 'bookings', 'collection_profiles', 'collections', 'member_favorites', 'memberships', 'member_tokens', 'member_mfa_challenges', 'member_sessions', 'members', 'fees',
+  'booking_messages', 'booking_events', 'bookings', 'collection_profiles', 'collections', 'member_favorites', 'memberships', 'member_tokens', 'member_mfa_challenges', 'member_sessions', 'members', 'fees',
   'profile_change_requests', 'companion_mfa_challenges', 'companion_tokens', 'companion_sessions', 'companion_accounts',
   'profile_time_off', 'profile_schedules', 'profile_rates', 'profile_media', 'profile_areas', 'profiles', 'tiers', 'locations', 'categories', 'site_settings'];
 

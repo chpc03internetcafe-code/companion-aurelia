@@ -19,6 +19,7 @@ import { memberRegisteredNote, membershipRequestNote, notifyStaff } from '../lib
 import { loadSettings } from '../services/settings.js';
 import { loadEvents, parseFees, publicBooking, SELECT_BOOKING } from '../services/bookings.js';
 import { cardsByIds } from '../services/profiles.js';
+import { messageCounts } from '../services/chat.js';
 import { createMembership, expireOld, MEMBER_PAYMENT_METHODS, requestKind, SELECT_MEMBERSHIP } from '../services/members.js';
 import { phDate } from '../lib/dates.js';
 
@@ -236,7 +237,8 @@ securityRoutes(router, REALMS.member, {
 // ---------- Bookings ----------
 router.get('/me/bookings', wrap(async (req, res) => {
   const rows = (await q(`${SELECT_BOOKING} WHERE b.member_id = $1 ORDER BY COALESCE(b.starts_at, b.created_at::timestamp) DESC`, [req.member.id])).map(parseFees);
-  res.json(await Promise.all(rows.map(async (b) => publicBooking(b, await loadEvents({ q }, b.id, true)))));
+  const counts = await messageCounts('Client', 'b.member_id', req.member.id);
+  res.json(await Promise.all(rows.map(async (b) => ({ ...publicBooking(b, await loadEvents({ q }, b.id, true)), unreadMessages: counts[b.id]?.unread || 0 }))));
 }));
 
 // ---------- Favourites ----------

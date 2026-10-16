@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -74,6 +74,38 @@ function EditModal({ b, onClose, onDone }) {
   );
 }
 
+// The client ↔ companion chat. Staff read it and can step in as the concierge (both sides see it).
+function ChatCard({ b, manage, onSent }) {
+  const [text, setText] = useState('');
+  const [run, busy] = useAction();
+  const listRef = useRef(null);
+  const c = b.chat;
+  useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [c.messages.length]);
+  const send = async () => {
+    const r = await run(() => api.post(`/bookings/${b.id}/messages`, { body: text }), 'Message sent');
+    if (r) { onSent(r); setText(''); }
+  };
+  return (
+    <div className="card card-pad">
+      <div className="section-title" style={{ marginTop: 0 }}>Client ↔ companion chat {c.open ? <Pill tone="green">Open</Pill> : <Pill tone="grey">Closed</Pill>}</div>
+      <div className="chat-list" ref={listRef}>
+        {c.messages.length ? c.messages.map((m) => (
+          <div key={m.id} className={`chat-msg ${m.sender.toLowerCase()}`}>
+            <div className="chat-bubble">{m.body}</div>
+            <small>{m.name} · {dateTime(m.at)}</small>
+          </div>
+        )) : <p className="muted" style={{ margin: 0 }}>{c.open ? 'No messages yet.' : c.note}</p>}
+      </div>
+      {manage && (
+        <div className="stack" style={{ marginTop: 10 }}>
+          <textarea rows={2} maxLength={2000} placeholder="Write as the concierge (the client and the companion both see it)…" value={text} onChange={(e) => setText(e.target.value)} aria-label="Concierge message" />
+          <div className="row"><span className="muted" style={{ fontSize: 12 }}>The client and companion are emailed about new messages.</span><span className="spacer" /><button className="btn btn-sm btn-primary" disabled={!text.trim() || busy} onClick={send}>Send</button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BookingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -82,6 +114,13 @@ export default function BookingDetail() {
   const manage = can('bookings', 'manage');
   const { data: b, loading, error, reload, setData } = useLoad(() => api.get(`/bookings/${id}`), [id]);
   useLiveRefresh('bookings', () => reload(true));
+  // chat messages don't raise staff notifications, so look for new ones while an open chat is on screen
+  const chatOpen = !!b?.chat?.open;
+  useEffect(() => {
+    if (!chatOpen) return undefined;
+    const t = setInterval(() => { if (document.visibilityState === 'visible') reload(true); }, 15000);
+    return () => clearInterval(t);
+  }, [chatOpen, reload]);
   const [modal, setModal] = useState(null);
   const [msg, setMsg] = useState({ note: '', visible: true, notify: true });
   const [run, busy] = useAction();
@@ -134,6 +173,7 @@ export default function BookingDetail() {
               {b.staffNotes && <div><div className="section-title" style={{ marginTop: 0 }}>Staff notes</div><p style={{ whiteSpace: 'pre-wrap' }}>{b.staffNotes}</p></div>}
             </div>
           )}
+          {b.chat && <ChatCard b={b} manage={manage} onSent={setData} />}
           <div className="card card-pad">
             <div className="section-title" style={{ marginTop: 0 }}>Timeline</div>
             <ul className="timeline">

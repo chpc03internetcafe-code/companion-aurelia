@@ -1,5 +1,6 @@
 // Companion portal: the person behind a profile signs in (invitation from staff) to answer booking requests,
-// keep availability current and send profile updates for review. Separate from the member account at /account.
+// chat with clients on confirmed bookings, keep availability current and send profile updates for review.
+// Separate from the member account at /account.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
@@ -9,6 +10,7 @@ import { dateTime, day, dayShort, duration, money, time12, todayIso, WEEKDAYS_LO
 import { Empty, Field, Loading, Photo, Status } from '../components/Common';
 import { IconCheck, IconLock } from '../components/Icons';
 import { Security, TwoStepForm } from '../components/AccountSecurity';
+import Chat from '../components/Chat';
 
 const BASE = '/companion';
 
@@ -117,9 +119,11 @@ function TokenScreen({ kind, onSignedIn }) {
 }
 
 // ---------- booking requests ----------
-function RequestCard({ b, onAnswered }) {
+function RequestCard({ b, onAnswered, onRead }) {
   const { toast } = useSite();
   const [declining, setDeclining] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const hasChat = b.chat && (b.chat.open || b.messageCount > 0);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const answer = async (accept) => {
@@ -136,7 +140,10 @@ function RequestCard({ b, onAnswered }) {
           <strong style={{ fontSize: '1.05rem' }}>{dayShort(b.date)}, {time12(b.time)}–{time12(b.endTime)}</strong>
           <div className="muted" style={{ fontSize: '0.88rem' }}>{b.rateLabel} · {duration(b.durationMinutes)} · {money(b.ratePrice)} · {b.reference}</div>
         </div>
-        <Status value={b.status} />
+        <div className="row" style={{ gap: 8 }}>
+          {b.unreadMessages > 0 && !chatOpen && <span className="unread-chip">{b.unreadMessages} new</span>}
+          <Status value={b.status} />
+        </div>
       </div>
       <div className="request-meta">
         <span><span className="muted">Client</span> {b.clientName}{b.isMember ? ' · member' : ''}</span>
@@ -149,6 +156,17 @@ function RequestCard({ b, onAnswered }) {
           <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => answer(true)}><IconCheck size={14} /> Accept</button>
           <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setDeclining(true)}>Decline</button>
         </div>
+      )}
+      {hasChat && !b.canRespond && (
+        <div className="row">
+          <button className="btn btn-ghost btn-sm" onClick={() => setChatOpen(!chatOpen)} aria-expanded={chatOpen}>
+            {chatOpen ? 'Hide messages' : b.unreadMessages > 0 ? `Read ${b.unreadMessages} new message${b.unreadMessages === 1 ? '' : 's'}` : `Message ${b.clientName}`}
+          </button>
+        </div>
+      )}
+      {chatOpen && (
+        <Chat path={`${BASE}/me/bookings/${b.reference}/messages`} title={`Messages with ${b.clientName}`} placeholder={`Write to ${b.clientName}…`} onRead={onRead}
+          hint="The concierge can read this chat. Keep payments and personal contact details within the booking." />
       )}
       {declining && (
         <div className="stack">
@@ -168,7 +186,7 @@ function BookingList({ scope, limit, empty, onChange }) {
   if (!list.length) return empty;
   return (
     <div className="stack">
-      {list.slice(0, limit || list.length).map((b) => <RequestCard key={b.reference} b={b} onAnswered={() => { load(); onChange?.(); }} />)}
+      {list.slice(0, limit || list.length).map((b) => <RequestCard key={b.reference} b={b} onAnswered={() => { load(); onChange?.(); }} onRead={onChange} />)}
     </div>
   );
 }
@@ -191,6 +209,7 @@ function Overview({ me, refresh }) {
           <div className="summary">
             <div className="summary-line"><span>Requests to answer</span><span>{me.stats.pendingRequests}</span></div>
             <div className="summary-line"><span>Upcoming bookings</span><span>{me.stats.upcoming}</span></div>
+            <div className="summary-line"><span>Unread messages</span><span>{me.stats.unreadMessages > 0 ? <Link to={`${BASE}/bookings`}>{me.stats.unreadMessages}</Link> : 0}</span></div>
             <div className="summary-line"><span>Updates waiting for review</span><span>{me.stats.pendingChanges}</span></div>
           </div>
           {away && <div className="notice" style={{ marginTop: 14 }}>You’re marked away until {day(p.awayUntil)}. <Link to={`${BASE}/availability`}>Change</Link></div>}
@@ -205,8 +224,9 @@ function Overview({ me, refresh }) {
   );
 }
 
-function Bookings({ refresh }) {
-  const [scope, setScope] = useState('pending');
+function Bookings({ me, refresh }) {
+  // open on the confirmed bookings when there's nothing to answer but new messages are waiting
+  const [scope, setScope] = useState(!me.stats.pendingRequests && me.stats.unreadMessages ? 'upcoming' : 'pending');
   const labels = { pending: 'To answer', upcoming: 'Upcoming', past: 'Past' };
   return (
     <div className="panel">
@@ -216,7 +236,7 @@ function Bookings({ refresh }) {
       </div>
       <BookingList scope={scope} onChange={refresh}
         empty={<Empty title={scope === 'pending' ? 'Nothing to answer' : scope === 'upcoming' ? 'No upcoming bookings' : 'No past bookings yet'} text={scope === 'pending' ? 'New requests appear here and we’ll email you too.' : ''} />} />
-      <p className="muted" style={{ fontSize: '0.84rem', margin: '16px 0 0' }}>Need to change or cancel a confirmed booking? Contact the concierge — they’ll arrange it with the client.</p>
+      <p className="muted" style={{ fontSize: '0.84rem', margin: '16px 0 0' }}>Once you accept a request you can message the client from the booking. Need to change or cancel a confirmed booking? Contact the concierge — they’ll arrange it with the client.</p>
     </div>
   );
 }
@@ -468,7 +488,9 @@ export default function Companion() {
         <span className="kicker" style={{ padding: '0 14px' }}>Companion portal</span>
         {TABS.map(([k, label]) => (
           <NavLink key={k} to={`${BASE}${k ? `/${k}` : ''}`} end={!k}>
-            {label}{k === 'bookings' && me.stats.pendingRequests > 0 && <b className="nav-count">{me.stats.pendingRequests}</b>}
+            {label}{k === 'bookings' && me.stats.pendingRequests + me.stats.unreadMessages > 0 && (
+              <b className="nav-count" title={`${me.stats.pendingRequests} to answer, ${me.stats.unreadMessages} unread messages`}>{me.stats.pendingRequests + me.stats.unreadMessages}</b>
+            )}
           </NavLink>
         ))}
         <button className="link" style={{ textAlign: 'left', padding: '10px 14px' }} onClick={logout}>Sign out</button>

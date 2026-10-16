@@ -21,6 +21,7 @@ import { CONTACT_METHODS, addEvent, createBooking, loadBooking, loadEvents, move
 import { cardsByIds, profileDetail, searchProfiles, similarProfiles, SORTS } from '../services/profiles.js';
 import { INQUIRY_SUBJECTS } from './inquiries.js';
 import { emailCompanion } from '../services/companions.js';
+import { chatState, messageCounts, readChat, sendChat } from '../services/chat.js';
 
 const router = Router();
 const visitor = (name, email) => ({ actorType: 'Visitor', userName: name, userEmail: email });
@@ -241,7 +242,8 @@ const selfService = (b, rules) => {
 };
 
 async function bookingResponse(b) {
-  return { ...publicBooking(b, await loadEvents({ q }, b.id, true)), profileId: b.profileId, rateId: b.rateId, ...selfService(b, await bookingRules()) };
+  const chat = chatState(b) && { ...chatState(b), unread: (await messageCounts('Client', 'b.id', b.id))[b.id]?.unread || 0 };
+  return { ...publicBooking(b, await loadEvents({ q }, b.id, true)), profileId: b.profileId, rateId: b.rateId, ...selfService(b, await bookingRules()), chat };
 }
 
 router.get('/bookings/:ref', wrap(async (req, res) => {
@@ -287,6 +289,18 @@ router.post('/bookings/:ref/reschedule', wrap(async (req, res) => {
   const shaped = await bookingResponse(after);
   await notify(bookingReceived(await loadSettings(), shaped, b.clientEmail));
   res.json(shaped);
+}));
+
+// Chat with the companion (confirmed bookings). `after` = last message id the page already has.
+router.get('/bookings/:ref/messages', wrap(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json(await readChat(await ownedBooking(req, req.query.email), 'Client', req.query.after));
+}));
+
+router.post('/bookings/:ref/messages', wrap(async (req, res) => {
+  const b = await ownedBooking(req, req.body.email);
+  await sendChat(b, 'Client', req.body.body);
+  res.status(201).json(await readChat(b, 'Client', req.body.after));
 }));
 
 // ---------- Landing pages ----------

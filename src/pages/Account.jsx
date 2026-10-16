@@ -183,8 +183,9 @@ function BookingRow({ b }) {
         <strong>{b.profile.name}</strong> <span className="muted">· {b.kind === 'Inquiry' ? 'Inquiry' : b.rateLabel}</span>
         <div className="muted" style={{ fontSize: '0.86rem' }}>{b.date ? `${dayShort(b.date)}${b.time ? `, ${time12(b.time)}` : ''}` : 'No date'} · {b.reference}{b.kind === 'Booking' ? ` · ${money(b.total)}` : ''}</div>
       </div>
+      {b.unreadMessages > 0 && <span className="unread-chip">{b.unreadMessages} new {b.unreadMessages === 1 ? 'message' : 'messages'}</span>}
       <Status value={b.status} />
-      <Link to={`/booking-status/${b.reference}`} className="btn btn-ghost btn-sm">Details</Link>
+      <Link to={`/booking-status/${b.reference}`} className="btn btn-ghost btn-sm">{b.unreadMessages > 0 ? 'Open chat' : 'Details'}</Link>
     </div>
   );
 }
