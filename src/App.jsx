@@ -43,6 +43,7 @@ export default function App() {
           <Route path="/account/:tab/:slug" element={<Account />} />
           <Route path="/companion" element={<Companion />} />
           <Route path="/companion/:tab" element={<Companion />} />
+          <Route path="/companion/:tab/:ref" element={<Companion />} />
           <Route path="/favorites" element={<Favorites />} />
           <Route path="/faq" element={<FAQ />} />
           <Route path="/contact" element={<Contact />} />

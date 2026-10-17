@@ -4,11 +4,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
-import { api } from '../utils/api';
+import { api, store } from '../utils/api';
 import { useSeo } from '../utils/seo';
 import { dateTime, day, dayShort, duration, money, time12, todayIso, WEEKDAYS_LONG } from '../utils/format';
 import { Empty, Field, Loading, Photo, Status } from '../components/Common';
-import { IconCheck, IconLock } from '../components/Icons';
+import { IconBell, IconChat, IconCheck, IconClose, IconLock } from '../components/Icons';
 import { Security, TwoStepForm } from '../components/AccountSecurity';
 import Chat from '../components/Chat';
 
@@ -191,7 +191,7 @@ function BookingList({ scope, limit, empty, onChange }) {
   );
 }
 
-function Overview({ me, refresh }) {
+function Overview({ me, refresh, inbox }) {
   const p = me.profile;
   const away = p.awayUntil && p.awayUntil >= todayIso();
   return (
@@ -209,13 +209,14 @@ function Overview({ me, refresh }) {
           <div className="summary">
             <div className="summary-line"><span>Requests to answer</span><span>{me.stats.pendingRequests}</span></div>
             <div className="summary-line"><span>Upcoming bookings</span><span>{me.stats.upcoming}</span></div>
-            <div className="summary-line"><span>Unread messages</span><span>{me.stats.unreadMessages > 0 ? <Link to={`${BASE}/bookings`}>{me.stats.unreadMessages}</Link> : 0}</span></div>
+            <div className="summary-line"><span>Unread messages</span><span>{inbox?.unread > 0 ? <Link to={`${BASE}/messages`}>{inbox.unread}</Link> : 0}</span></div>
             <div className="summary-line"><span>Updates waiting for review</span><span>{me.stats.pendingChanges}</span></div>
           </div>
           {away && <div className="notice" style={{ marginTop: 14 }}>You’re marked away until {day(p.awayUntil)}. <Link to={`${BASE}/availability`}>Change</Link></div>}
           {!me.twoStep && <div className="notice" style={{ marginTop: 14 }}>Protect your account with an authenticator app. <Link to={`${BASE}/security`}>Turn on two-step sign-in</Link></div>}
         </div>
       </div>
+      <NewMessages inbox={inbox} />
       <div className="panel">
         <div className="row" style={{ justifyContent: 'space-between', marginBottom: 14 }}><h3 style={{ margin: 0 }}>Waiting for your answer</h3><Link to={`${BASE}/bookings`}>All bookings</Link></div>
         <BookingList scope="pending" limit={5} onChange={refresh} empty={<p className="muted" style={{ margin: 0 }}>No new requests right now.</p>} />
@@ -448,16 +449,169 @@ function ProfileTab({ refresh }) {
   );
 }
 
+// ---------- messages: inbox and new-message alerts ----------
+const INBOX_POLL_MS = 20000;
+const ALERTS_KEY = 'aurelia-companion-desktop-alerts';
+const canNotify = () => typeof window !== 'undefined' && 'Notification' in window;
+// desktop alerts: allowed by the browser and switched on in the Messages tab
+const desktopAlertsOn = () => canNotify() && Notification.permission === 'granted' && store.get(ALERTS_KEY, false);
+const senderLabel = (t) => (t.last?.from === 'concierge' ? 'the concierge' : t.clientName);
+
+/**
+ * Polls the inbox while signed in. Calls onNew(threads) for conversations whose latest message arrived since the
+ * previous check and wasn't sent by the companion. The first load only sets the baseline, so old messages don't alert.
+ */
+function useInbox(enabled, onNew) {
+  const [inbox, setInbox] = useState(null);
+  const seen = useRef(null);
+  const onNewRef = useRef(onNew);
+  onNewRef.current = onNew;
+  const load = useCallback(() => api('GET', `${BASE}/me/messages`).then((r) => {
+    if (seen.current) {
+      const fresh = r.threads.filter((t) => t.last && t.last.from !== 'me' && t.unread > 0 && t.last.id > (seen.current[t.reference] || 0));
+      if (fresh.length) onNewRef.current(fresh);
+    }
+    seen.current = Object.fromEntries(r.threads.map((t) => [t.reference, t.last?.id || 0]));
+    setInbox(r);
+  }).catch(() => {}), []);
+  useEffect(() => {
+    if (!enabled) { setInbox(null); seen.current = null; return undefined; }
+    load();
+    // in a background tab, keep checking only when desktop alerts are on
+    const t = setInterval(() => { if (document.visibilityState === 'visible' || desktopAlertsOn()) load(); }, INBOX_POLL_MS);
+    window.addEventListener('focus', load);
+    return () => { clearInterval(t); window.removeEventListener('focus', load); };
+  }, [enabled, load]);
+  return [inbox, load];
+}
+
+/** Pop-up cards for new messages, each opening the conversation. */
+function MessageAlerts({ alerts, onOpen, onDismiss }) {
+  if (!alerts.length) return null;
+  return (
+    <div className="msg-alerts" role="status" aria-live="polite">
+      {alerts.map((a) => (
+        <div key={a.key} className="msg-alert">
+          <span className="msg-alert-icon"><IconChat size={18} /></span>
+          <div className="msg-alert-body">
+            <strong>New message from {a.from}</strong>
+            <small className="muted">{a.reference}{a.date ? ` · ${dayShort(a.date)}` : ''}</small>
+            <p>{a.preview}</p>
+            <button className="btn btn-primary btn-sm" onClick={() => onOpen(a)}>Read &amp; reply</button>
+          </div>
+          <button className="msg-alert-x" onClick={() => onDismiss(a.key)} aria-label="Dismiss"><IconClose size={16} /></button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DesktopAlerts() {
+  const [on, setOn] = useState(() => desktopAlertsOn());
+  if (!canNotify()) return null;
+  if (Notification.permission === 'denied') return <span className="muted" style={{ fontSize: '0.82rem' }}>Desktop alerts are blocked in this browser’s site settings.</span>;
+  const toggle = async () => {
+    if (on) { store.set(ALERTS_KEY, false); setOn(false); return; }
+    const p = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    store.set(ALERTS_KEY, p === 'granted');
+    setOn(p === 'granted');
+  };
+  return <button className="btn btn-ghost btn-sm" onClick={toggle} aria-pressed={on}><IconBell size={14} /> {on ? 'Desktop alerts on' : 'Turn on desktop alerts'}</button>;
+}
+
+function ThreadRow({ t, active }) {
+  const who = t.last?.from === 'me' ? 'You: ' : t.last?.from === 'concierge' ? 'Concierge: ' : '';
+  return (
+    <Link to={`${BASE}/messages/${t.reference}`} className={`thread${active ? ' on' : ''}${t.unread ? ' unread' : ''}`} aria-current={active ? 'true' : undefined}>
+      <span className="thread-head">
+        <strong>{t.clientName}</strong>
+        {t.unread > 0 ? <span className="unread-chip">{t.unread} new</span> : t.last && <small className="muted">{dateTime(t.last.at)}</small>}
+      </span>
+      <small className="muted">{t.date ? `${dayShort(t.date)}, ${time12(t.time)} · ` : ''}{t.rateLabel} · <span style={{ whiteSpace: 'nowrap' }}>{t.reference}</span></small>
+      <span className="thread-preview">{t.last ? `${who}${t.last.preview}` : t.open ? 'No messages yet — say hello.' : 'No messages.'}</span>
+    </Link>
+  );
+}
+
+function Messages({ inbox, reloadInbox, refresh }) {
+  const { ref } = useParams();
+  const navigate = useNavigate();
+  const threads = inbox?.threads || [];
+  const active = threads.find((t) => t.reference === ref);
+  // on a wide screen, open the top conversation straight away
+  useEffect(() => {
+    if (!ref && threads.length && window.matchMedia('(min-width: 961px)').matches) navigate(`${BASE}/messages/${threads[0].reference}`, { replace: true });
+  }, [ref, threads.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onRead = useCallback(() => { reloadInbox(); refresh(); }, [reloadInbox, refresh]);
+  if (!inbox) return <Loading />;
+  return (
+    <div className="panel">
+      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 14 }}>
+        <h2 style={{ margin: 0 }}>Messages</h2>
+        <DesktopAlerts />
+      </div>
+      {!threads.length ? (
+        <Empty title="No conversations yet" text="Once you accept a booking request, you can message the client here." />
+      ) : (
+        <div className={`inbox${ref ? ' has-active' : ''}`}>
+          <nav className="thread-list" aria-label="Conversations">{threads.map((t) => <ThreadRow key={t.reference} t={t} active={t.reference === ref} />)}</nav>
+          <div className="thread-view">
+            {ref && <Link to={`${BASE}/messages`} className="thread-back">← All conversations</Link>}
+            {active ? (
+              <Chat key={active.reference} path={`${BASE}/me/bookings/${active.reference}/messages`} onRead={onRead}
+                title={`${active.clientName} · ${active.date ? `${dayShort(active.date)}, ${time12(active.time)}` : active.reference}`} placeholder={`Write to ${active.clientName}…`}
+                hint="The concierge can read this chat. Keep payments and personal contact details within the booking." />
+            ) : ref ? <div className="notice">This conversation isn’t available any more.</div> : <p className="muted">Choose a conversation.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NewMessages({ inbox }) {
+  const unread = (inbox?.threads || []).filter((t) => t.unread > 0);
+  if (!unread.length) return null;
+  return (
+    <div className="panel">
+      <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}><h3 style={{ margin: 0 }}>New messages</h3><Link to={`${BASE}/messages`}>All messages</Link></div>
+      <div className="stack" style={{ gap: 8 }}>{unread.slice(0, 4).map((t) => <ThreadRow key={t.reference} t={t} />)}</div>
+    </div>
+  );
+}
+
 // ---------- shell ----------
-const TABS = [['', 'Overview'], ['bookings', 'Bookings'], ['availability', 'Availability'], ['profile', 'My profile'], ['security', 'Security']];
+const TABS = [['', 'Overview'], ['messages', 'Messages'], ['bookings', 'Bookings'], ['availability', 'Availability'], ['profile', 'My profile'], ['security', 'Security']];
 const CompanionSecurity = () => <Security base={BASE} />;
 
 export default function Companion() {
-  const { tab = '' } = useParams();
+  const { tab = '', ref } = useParams();
   const navigate = useNavigate();
   const { toast } = useSite();
   const [me, setMe] = useState(undefined);
-  useSeo({ title: 'Companion portal', noindex: true });
+  const [alerts, setAlerts] = useState([]);
+  const openRef = tab === 'messages' ? ref : null;
+  const onNew = useCallback((threads) => {
+    // the conversation already on screen shows new messages by itself
+    const fresh = threads.filter((t) => !(t.reference === openRef && document.visibilityState === 'visible'));
+    if (!fresh.length) return;
+    setAlerts((cur) => [
+      ...fresh.map((t) => ({ key: `${t.reference}:${t.last.id}`, reference: t.reference, date: t.date, from: senderLabel(t), preview: t.last.preview })),
+      ...cur.filter((a) => !fresh.some((t) => t.reference === a.reference)),
+    ].slice(0, 3));
+    if (document.visibilityState !== 'visible' && desktopAlertsOn()) {
+      for (const t of fresh) {
+        try {
+          const n = new Notification(`New message from ${senderLabel(t)}`, { body: t.last.preview, tag: t.reference });
+          n.onclick = () => { window.focus(); navigate(`${BASE}/messages/${t.reference}`); n.close(); };
+        } catch { /* some mobile browsers only allow notifications from a service worker */ }
+      }
+    }
+  }, [openRef, navigate]);
+  const [inbox, reloadInbox] = useInbox(!!me, onNew);
+  useSeo({ title: `${inbox?.unread ? `(${inbox.unread}) ` : ''}Companion portal`, noindex: true });
+  // opening a conversation clears its alert
+  useEffect(() => { if (openRef) setAlerts((cur) => cur.filter((a) => a.reference !== openRef)); }, [openRef]);
   const refresh = useCallback(() => api('GET', `${BASE}/session`).then((r) => setMe(r.user)).catch(() => setMe(null)), []);
   useEffect(() => { refresh(); }, [refresh]);
   const signedIn = (u, message) => {
@@ -481,21 +635,22 @@ export default function Companion() {
       </div>
     );
   }
-  const View = { '': Overview, bookings: Bookings, availability: Availability, profile: ProfileTab, security: CompanionSecurity }[tab] || Overview;
+  const View = { '': Overview, messages: Messages, bookings: Bookings, availability: Availability, profile: ProfileTab, security: CompanionSecurity }[tab] || Overview;
   return (
     <div className="container account">
       <nav className="account-nav" aria-label="Companion portal">
         <span className="kicker" style={{ padding: '0 14px' }}>Companion portal</span>
         {TABS.map(([k, label]) => (
           <NavLink key={k} to={`${BASE}${k ? `/${k}` : ''}`} end={!k}>
-            {label}{k === 'bookings' && me.stats.pendingRequests + me.stats.unreadMessages > 0 && (
-              <b className="nav-count" title={`${me.stats.pendingRequests} to answer, ${me.stats.unreadMessages} unread messages`}>{me.stats.pendingRequests + me.stats.unreadMessages}</b>
-            )}
+            {label}{k === 'bookings' && me.stats.pendingRequests > 0 && <b className="nav-count">{me.stats.pendingRequests}</b>}
+            {k === 'messages' && inbox?.unread > 0 && <b className="nav-count" title={`${inbox.unread} unread`}>{inbox.unread}</b>}
           </NavLink>
         ))}
         <button className="link" style={{ textAlign: 'left', padding: '10px 14px' }} onClick={logout}>Sign out</button>
       </nav>
-      <div><View me={me} refresh={refresh} /></div>
+      <div><View me={me} refresh={refresh} inbox={inbox} reloadInbox={reloadInbox} /></div>
+      <MessageAlerts alerts={alerts} onDismiss={(key) => setAlerts((cur) => cur.filter((a) => a.key !== key))}
+        onOpen={(a) => { setAlerts((cur) => cur.filter((x) => x.key !== a.key)); navigate(`${BASE}/messages/${a.reference}`); }} />
     </div>
   );
 }

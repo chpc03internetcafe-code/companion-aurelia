@@ -36,6 +36,8 @@ export default function Header() {
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
   useEffect(() => setOpen(false), [pathname]);
+  // the companion portal (/companion…, not /companions) is for the person behind a profile: no client shortcuts there
+  const portal = /^\/companion(\/|$)/.test(pathname);
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -58,13 +60,15 @@ export default function Header() {
             {nav.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}
           </nav>
           <div className="header-actions">
-            <Link to="/favorites" className="icon-link" aria-label={`Favourites (${favorites.length})`} title="Favourites">
-              <IconHeart size={18} />{favorites.length > 0 && <span className="count">{favorites.length}</span>}
-            </Link>
-            <Link to="/account" className="icon-link" aria-label={member ? 'My account' : 'Sign in'} title={member ? `${member.firstName}’s account` : 'Member sign-in'}>
-              {member?.vipActive ? <IconCrown size={18} /> : <IconUser size={18} />}{member && <span className="dot" aria-hidden="true" />}
-            </Link>
-            <Link to="/companions?available=today" className="btn btn-primary btn-sm header-book">Available today</Link>
+            {!portal && <>
+              <Link to="/favorites" className="icon-link" aria-label={`Favourites (${favorites.length})`} title="Favourites">
+                <IconHeart size={18} />{favorites.length > 0 && <span className="count">{favorites.length}</span>}
+              </Link>
+              <Link to="/account" className="icon-link" aria-label={member ? 'My account' : 'Sign in'} title={member ? `${member.firstName}’s account` : 'Member sign-in'}>
+                {member?.vipActive ? <IconCrown size={18} /> : <IconUser size={18} />}{member && <span className="dot" aria-hidden="true" />}
+              </Link>
+              <Link to="/companions?available=today" className="btn btn-primary btn-sm header-book">Available today</Link>
+            </>}
             <button className="menu-toggle" onClick={() => setOpen(true)} aria-label="Open menu"><IconMenu size={26} /></button>
           </div>
         </div>
@@ -79,13 +83,15 @@ export default function Header() {
             <nav>
               <NavLink to="/" end>Home</NavLink>
               {nav.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}
-              <NavLink to="/favorites">Favourites ({favorites.length})</NavLink>
-              <NavLink to="/booking-status">Check my booking</NavLink>
+              {portal ? <NavLink to="/companion">Companion portal</NavLink> : <>
+                <NavLink to="/favorites">Favourites ({favorites.length})</NavLink>
+                <NavLink to="/booking-status">Check my booking</NavLink>
+              </>}
               <NavLink to="/faq">FAQ</NavLink>
               <NavLink to="/contact">Contact</NavLink>
-              <NavLink to="/account">{member ? 'My account' : 'Member sign-in'}</NavLink>
+              {!portal && <NavLink to="/account">{member ? 'My account' : 'Member sign-in'}</NavLink>}
             </nav>
-            <Link to="/companions?available=today" className="btn btn-primary btn-block">Available today</Link>
+            {!portal && <Link to="/companions?available=today" className="btn btn-primary btn-block">Available today</Link>}
           </aside>
         </div>
       )}

@@ -88,3 +88,12 @@ export async function messageCounts(party, where, value) {
     FROM booking_messages bm JOIN bookings b ON b.id = bm.booking_id WHERE ${where} = $1 GROUP BY bm.booking_id`, [value, party]);
   return Object.fromEntries(rows.map((r) => [r.bookingId, { total: r.total, unread: r.unread }]));
 }
+
+/** The latest message of each booking, keyed by booking id, with the text cut to a short preview. */
+export async function lastMessages(bookingIds, previewLength = 140) {
+  if (!bookingIds.length) return {};
+  const rows = await q(`SELECT DISTINCT ON (booking_id) booking_id, id, sender, body, created_at FROM booking_messages
+    WHERE booking_id = ANY($1::int[]) ORDER BY booking_id, id DESC`, [bookingIds]);
+  const cut = (t) => (t.length > previewLength ? `${t.slice(0, previewLength - 1).trimEnd()}…` : t);
+  return Object.fromEntries(rows.map((m) => [m.bookingId, { id: m.id, sender: m.sender, preview: cut(m.body.replace(/\s+/g, ' ')), at: m.createdAt }]));
+}

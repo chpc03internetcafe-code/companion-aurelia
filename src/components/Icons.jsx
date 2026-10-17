@@ -30,3 +30,4 @@ export const IconSparkle = (p) => <I {...p} d="M12 3v4M12 17v4M3 12h4M17 12h4M6 
 export const IconChat = (p) => <I {...p} d="M4 18.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H8l-4 3.5Z" />;
 export const IconInstagram = (p) => <I {...p}><rect x="3.5" y="3.5" width="17" height="17" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.2" cy="6.8" r="0.6" fill="currentColor" /></I>;
 export const IconSend = (p) => <I {...p} d="M21 3 3 10.5l7 2.5 2.5 7L21 3ZM10 13l4.5-4.5" />;
+export const IconBell = (p) => <I {...p}><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></I>;

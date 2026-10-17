@@ -24,7 +24,7 @@ import { loadSettings } from '../services/settings.js';
 import { addEvent, loadBooking, parseFees, publicBooking, SELECT_BOOKING } from '../services/bookings.js';
 import { loadSchedule, parseBlocks, parseTimeOff, saveSchedule, saveTimeOff } from '../services/schedule.js';
 import { DETAIL_FIELDS, detailsSchema } from '../services/companions.js';
-import { chatState, messageCounts, readChat, sendChat } from '../services/chat.js';
+import { chatState, lastMessages, messageCounts, readChat, sendChat } from '../services/chat.js';
 
 const router = Router();
 const realm = REALMS.companion;
@@ -253,6 +253,28 @@ async function answer(req, res, accept) {
 }
 router.post('/me/bookings/:ref/accept', wrap((req, res) => answer(req, res, true)));
 router.post('/me/bookings/:ref/decline', wrap((req, res) => answer(req, res, false)));
+
+// Inbox: every booking with messages, plus confirmed upcoming ones where a chat can be started. Unread first,
+// then the most recent conversation. The portal polls this for new-message alerts, so it stays one light query.
+router.get('/me/messages', wrap(async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const pid = req.companion.profileId;
+  const rows = (await q(`${SELECT_MINE} WHERE b.profile_id = $1 AND b.kind = 'Booking'
+      AND (EXISTS (SELECT 1 FROM booking_messages bm WHERE bm.booking_id = b.id) OR (b.status = 'Confirmed' AND b.starts_at > ph_now()))
+    ORDER BY b.starts_at LIMIT 100`, [pid])).map(parseFees);
+  const [counts, last] = await Promise.all([messageCounts('Companion', 'b.profile_id', pid), lastMessages(rows.map((b) => b.id))]);
+  const threads = rows.map((b) => {
+    const m = last[b.id];
+    return {
+      reference: b.reference, status: b.status, clientName: firstName(b.clientName), rateLabel: b.rateLabel, date: b.bookingDate, time: b.startTime,
+      open: !!chatState(b)?.open, unread: counts[b.id]?.unread || 0, total: counts[b.id]?.total || 0,
+      last: m ? { id: m.id, from: m.sender === 'Companion' ? 'me' : m.sender === 'Concierge' ? 'concierge' : 'them', preview: m.preview, at: m.at } : null,
+    };
+  });
+  const when = (t) => (t.last ? Date.parse(t.last.at) : 0);
+  threads.sort((a, b) => (b.unread > 0) - (a.unread > 0) || when(b) - when(a));
+  res.json({ unread: threads.reduce((n, t) => n + t.unread, 0), threads });
+}));
 
 // Chat with the client (confirmed bookings). `after` = last message id the portal already has.
 router.get('/me/bookings/:ref/messages', wrap(async (req, res) => {
