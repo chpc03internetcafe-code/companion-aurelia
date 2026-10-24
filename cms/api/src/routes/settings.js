@@ -37,6 +37,8 @@ const settingsSchema = {
   currency: { type: 'enum', values: ['PHP', 'USD', 'EUR', 'GBP', 'SGD', 'HKD', 'AUD', 'THB'], label: 'Currency' },
   ageGateEnabled: flag,
   ageGateText: { type: 'string', max: 600 },
+  liveChatEnabled: flag,
+  liveChatGreeting: { type: 'string', max: 400 },
   autoConfirm: flag,
   bookingLeadHours: numberText(0, 168, 'Lead time'),
   bookingWindowDays: numberText(1, 365, 'Booking window'),

@@ -11,7 +11,7 @@ import { auditWrites } from './lib/audit.js';
 import { UPLOAD_DIR } from './lib/storage.js';
 import { mailConfigured } from './lib/mailer.js';
 import { cached, clearCacheOnWrite } from './lib/cache.js';
-import { blockCrossSite, checkProductionConfig, corsOptions, isProduction, loggableError, requestLimit, safeJsonReviver, securityHeaders, trustProxySetting } from './lib/security.js';
+import { blockCrossSite, checkProductionConfig, corsOptions, isProduction, LONG_POLL_PATHS, loggableError, requestLimit, safeJsonReviver, securityHeaders, trustProxySetting } from './lib/security.js';
 import { idleMinutes, loadSettings } from './services/settings.js';
 import { BOOKING_SOURCES, BOOKING_STATUSES, CONTACT_METHODS, INQUIRY_STATUSES as PROFILE_INQUIRY_STATUSES } from './services/bookings.js';
 import { MEMBER_PAYMENT_METHODS, MEMBERSHIP_KINDS, MEMBERSHIP_STATUSES } from './services/members.js';
@@ -33,6 +33,8 @@ import siteRoutes from './routes/site.js';
 import accountRoutes from './routes/account.js';
 import companionRoutes from './routes/companion.js';
 import companionAdminRoutes from './routes/companions.js';
+import liveChatSiteRoutes from './routes/live-chat-site.js';
+import liveChatRoutes from './routes/live-chat.js';
 
 const app = express();
 checkProductionConfig();
@@ -42,7 +44,7 @@ app.use(securityHeaders);
 app.use(cors(corsOptions));
 app.use(requestLimit);
 // gzip / brotli for JSON, XML and text over 1 KB. The live-notification long poll is left alone so it answers immediately.
-app.use(compression({ threshold: 1024, filter: (req, res) => req.path !== '/api/notifications/wait' && compression.filter(req, res) }));
+app.use(compression({ threshold: 1024, filter: (req, res) => !LONG_POLL_PATHS.has(req.path) && compression.filter(req, res) }));
 app.use(express.json({
   limit: '1mb',
   reviver: safeJsonReviver,
@@ -86,6 +88,7 @@ async function meta() {
 }
 
 // Public: website and member portal
+app.use('/api/site/chat', liveChatSiteRoutes);
 app.use('/api/site', siteRoutes);
 app.use('/api/account', accountRoutes);
 app.use('/api/companion', companionRoutes);
@@ -104,6 +107,7 @@ app.use('/api/seo', requirePermission('seo'), auditWrites('seo'), seoRoutes);
 app.use('/api/inquiries', requirePermission('inquiries'), auditWrites('inquiries'), inquiryRoutes);
 app.use('/api/settings', requirePermission('settings'), auditWrites('settings'), settingsRoutes);
 app.use('/api/notifications', requireAdmin, notificationRoutes);
+app.use('/api/live-chat', requirePermission('inquiries'), liveChatRoutes); // logs its own audit entries (never the message text)
 app.use('/api/audit', requirePermission('audit'), auditRoutes);
 
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found.')));

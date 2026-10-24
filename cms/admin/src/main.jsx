@@ -26,6 +26,7 @@ const ContentEditor = lazy(() => import('./pages/ContentEditor'));
 const PostEditor = lazy(() => import('./pages/PostEditor'));
 const Seo = lazy(() => import('./pages/Seo'));
 const Inquiries = lazy(() => import('./pages/Inquiries'));
+const LiveChat = lazy(() => import('./pages/LiveChat'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Users = lazy(() => import('./pages/Users'));
 const Roles = lazy(() => import('./pages/Roles'));
@@ -74,6 +75,8 @@ function App() {
             <Route path="/content/posts/:id" element={g('content', <PostEditor />)} />
             <Route path="/seo" element={g('seo', <Seo />)} />
             <Route path="/inquiries" element={g('inquiries', <Inquiries />)} />
+            <Route path="/live-chat" element={g('inquiries', <LiveChat />)} />
+            <Route path="/live-chat/:id" element={g('inquiries', <LiveChat />)} />
             <Route path="/settings" element={g('settings', <Settings />)} />
             <Route path="/users" element={g('users', <Users />)} />
             <Route path="/roles" element={g('users', <Roles />)} />

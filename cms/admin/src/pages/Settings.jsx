@@ -7,7 +7,7 @@ import { ErrorBox, Field, Loading, Modal, PageHead, Pill, Tabs, Toggle, useActio
 
 const GROUPS = {
   general: ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl', 'telegramUrl', 'whatsappUrl', 'currency'],
-  homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText'],
+  homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText', 'liveChatEnabled', 'liveChatGreeting'],
   booking: ['autoConfirm', 'bookingLeadHours', 'bookingWindowDays', 'cancelCutoffHours', 'rescheduleLimit', 'slotMinutes', 'bufferMinutes', 'membersOnlyBooking', 'bookingPolicy', 'memberPaymentInstructions'],
   security: ['staffIdleMinutes', 'companionIdleMinutes', 'memberIdleMinutes'],
 };
@@ -141,6 +141,9 @@ export default function Settings() {
                 <h2>Adults-only notice</h2>
                 <Toggle {...flag(form, setForm, 'ageGateEnabled')} label="Ask visitors to confirm they are 18+" hint="Shown once per browser before the site opens" />
                 <Field label="Notice text" error={errors.ageGateText}><textarea rows={5} value={form.ageGateText} onChange={set('ageGateText')} /></Field>
+                <h2 style={{ marginTop: 12 }}>Live chat</h2>
+                <Toggle {...flag(form, setForm, 'liveChatEnabled')} label="Show the live chat button on the website" hint="Chats are answered under Live chat and stored encrypted" />
+                <Field label="Greeting" error={errors.liveChatGreeting} hint="First thing visitors see when they open the chat"><textarea rows={3} value={form.liveChatGreeting} onChange={set('liveChatGreeting')} /></Field>
               </div>
             </div>
           )}

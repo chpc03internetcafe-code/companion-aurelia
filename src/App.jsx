@@ -28,6 +28,7 @@ const FAQ = lazy(() => import('./pages/FAQ'));
 const Contact = lazy(() => import('./pages/Contact'));
 const ContentPage = lazy(() => import('./pages/ContentPage'));
 const NotFound = lazy(() => import('./pages/NotFound'));
+const LiveChat = lazy(() => import('./components/LiveChat'));
 
 export default function App() {
   return (
@@ -66,6 +67,7 @@ export default function App() {
       </main>
       <Footer />
       <AgeGate />
+      <Suspense fallback={null}><LiveChat /></Suspense>
       <Toasts />
     </>
   );

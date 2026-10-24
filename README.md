@@ -122,6 +122,13 @@ npm run admin:reset -- someone@example.com   # print a new temporary password
 
 - Two-step sign-in with an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…): QR code setup, 10 one-time backup codes, and a staff reset in the CMS for members who lose their phone.
 
+### Live chat
+- A **Chat** button in the corner of every website page (not in the companion portal, and only after the 18+ notice). Guests give a name and, optionally, an email; signed-in members chat under their account.
+- Staff answer in **CMS → Live chat**: open chats with unread counts, who's on the website now, assign to me, close and reopen, and a link to the member. Replies appear within a second or two on both sides (long polling, so it works on Vercel without WebSockets).
+- The chat belongs to the browser that started it (a random token in an httpOnly cookie; only its SHA-256 is stored). Visitors without a chat make no chat requests.
+- Staff are notified when a chat starts or a quiet chat gets a new message. If the visitor has left when staff reply and gave an email, they get a "you have a reply" email, without the text.
+- Switch it off or change the greeting in **Site settings → Homepage**. Needs the **Contact Messages** permission (View to read, Manage to reply).
+
 ### Companion portal (`/companion`)
 - Staff invite a companion from **CMS → Profiles → (profile) → Portal access**. The companion gets an email link to choose a password (valid 72 hours). One sign-in per profile.
 - **Booking requests:** companions see their own requests (date, session, area, client first name and notes, never client email or phone) and accept or decline them. The client is emailed and staff are notified. Companions are emailed when a new request arrives.
@@ -155,6 +162,7 @@ npm run admin:reset -- someone@example.com   # print a new temporary password
 | **VIP tiers & collections** | Tiers (price, length, access level, perks, colour, listed or unlisted); collections with a profile picker and ordering |
 | **Content & FAQs** | Page and article editors with live preview, cover images, members-only audience; FAQs |
 | **SEO & redirects** | Health check, redirects, SEO defaults |
+| **Live chat** | Website chats: open/closed lists, search, unread counts, reply, assign, close and reopen |
 | **Messages** | Contact form messages |
 | **Site settings** | Brand and contact details, currency, homepage hero, announcement bar, 18+ notice, 6 website themes, booking rules and policy, member payment instructions, fees, email test |
 | **Users, roles, audit trail, notifications** | Same as DENTAL_v2: role permissions (No access / View / Manage per section) with 6 starter roles; full audit trail with before → after values; live notifications for booking requests, cancellations, reschedules, membership requests, new members and messages |
@@ -204,7 +212,7 @@ The embedded database is for local development only. The API refuses to start on
 - **Uploads:** JPG/PNG/WEBP only, checked from the file's bytes, at most 4 MB and 40 megapixels. Every image is decoded and re-encoded, which strips metadata and anything hidden in the file.
 - **XSS:** React escapes all content. Production builds add a Content Security Policy (own scripts only). The API and pages send `nosniff`, `X-Frame-Options: DENY`, HSTS and a referrer policy.
 - **Production:** generic error messages, no stack traces or SQL in responses, `x-powered-by` off, no source maps. Email links are shown on screen only on a developer's machine (embedded database, or `SHOW_DEV_LINKS=1`). Logs mask email addresses and never contain passwords, tokens or two-step secrets (also stripped from the audit trail).
-- **Encrypted messages:** booking chats (client, companion, concierge), timeline messages and notes, and the client's note on a booking request are stored with AES-256-GCM (`cms/api/src/lib/encryption.js`). Only the server, holding `MESSAGE_ENCRYPTION_KEY`, can read them; the database, its backups and the Supabase dashboard show ciphertext. Use the same key locally and on Vercel, and keep a copy: without it the messages can't be recovered. `npm run db:encrypt-messages` encrypts older plain-text rows and re-encrypts after a key change (old key in `MESSAGE_ENCRYPTION_KEYS_OLD`).
+- **Encrypted messages:** booking chats (client, companion, concierge), website live chats, timeline messages and notes, and the client's note on a booking request are stored with AES-256-GCM (`cms/api/src/lib/encryption.js`). Only the server, holding `MESSAGE_ENCRYPTION_KEY`, can read them; the database, its backups and the Supabase dashboard show ciphertext. Use the same key locally and on Vercel, and keep a copy: without it the messages can't be recovered. `npm run db:encrypt-messages` encrypts older plain-text rows and re-encrypts after a key change (old key in `MESSAGE_ENCRYPTION_KEYS_OLD`).
 - **Secrets:** only in environment variables on the server (`cms/api/.env` locally, Vercel settings when deployed). None are sent to the browser.
 - **Webhooks:** none are received yet. `cms/api/src/lib/webhooks.js` verifies HMAC-SHA256 signatures with a time window and replay check; mount new webhooks under `/api/webhooks/`.
 - **Dependencies:** `npm audit` reports no known vulnerabilities in the website, API or CMS. Re-check with `npm audit` in each folder.

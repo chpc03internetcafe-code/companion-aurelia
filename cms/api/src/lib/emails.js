@@ -266,6 +266,22 @@ export function chatMessageToCompanion(site, a, b) {
   };
 }
 
+// Live chat: the visitor left before the concierge answered. The chat opens only in the browser that started it.
+export function liveChatReply(site, c) {
+  const url = siteUrl() ? `${siteUrl()}/?chat=open` : null;
+  return {
+    to: c.visitorEmail,
+    subject: `The concierge replied to your chat — ${site.siteName}`,
+    html: layout(site, {
+      heading: 'You have a reply',
+      intro: `Hi ${esc(firstName(c.visitorName))}, our concierge answered your live chat (${esc(c.reference)}).`,
+      cta: url ? { label: 'Open the chat', url } : null,
+      footnote: 'For your privacy the reply isn’t included in this email. Open the website on the same device and browser you chatted from to read it.',
+    }),
+    text: text([`Hi ${firstName(c.visitorName)},`, `Our concierge answered your live chat (${c.reference}). Open the website on the same device and browser you chatted from to read it.`, url]),
+  };
+}
+
 export function companionChangeDecided(site, a, { kind, approved, note }) {
   const what = kind === 'photo' ? 'new photo' : 'profile update';
   return {

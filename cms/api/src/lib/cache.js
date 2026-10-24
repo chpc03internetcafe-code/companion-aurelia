@@ -35,9 +35,12 @@ export function clearCache(prefix) {
   for (const k of entries.keys()) if (k.startsWith(prefix)) entries.delete(k);
 }
 
+// Chat messages change nothing that's cached, and arrive often, so they don't clear it.
+const NO_CLEAR = /^\/api\/(site\/chat|live-chat|site\/bookings\/[^/]+\/messages|companion\/me\/bookings\/[^/]+\/messages)(\/|$)/;
+
 /** Express middleware: clears the cache after any successful write request. */
 export function clearCacheOnWrite(req, res, next) {
-  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS' && !NO_CLEAR.test(req.path)) {
     res.on('finish', () => { if (res.statusCode < 400) clearCache(); });
   }
   next();

@@ -520,3 +520,34 @@ button.stat:hover, a.stat:hover { border-color: var(--primary); }
 .chat-msg.companion .chat-bubble { border-radius: 12px 12px 3px 12px; background: var(--primary-soft); }
 .chat-msg.concierge .chat-bubble { border-radius: 8px; background: var(--surface); border: 1px dashed var(--line-strong); }
 .chat-msg small { color: var(--muted); font-size: 11px; margin-top: 3px; }
+
+/* ---------- Live chat: chat list + open chat; one at a time on narrow screens ---------- */
+.lc-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.lc-list-card .filters { flex-wrap: nowrap; }
+.lc-list-card .search { flex: 1; min-width: 0; }
+.lc-rows { display: flex; flex-direction: column; max-height: calc(100vh - 260px); overflow-y: auto; }
+.lc-row { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
+.lc-row:hover { background: var(--bg); }
+.lc-row.on { background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); }
+.lc-row-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.lc-row-head strong { display: inline-flex; align-items: center; gap: 6px; }
+.lc-row-preview { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-row.unread .lc-row-preview { color: var(--text); font-weight: 600; }
+.lc-online { width: 8px; height: 8px; border-radius: 50%; background: #2fa66a; display: inline-block; }
+.lc-thread-body { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 0; }
+.lc-messages { max-height: none; height: calc(100vh - 380px); min-height: 280px; padding: 16px 18px; }
+.lc-info { border-left: 1px solid var(--line); padding: 14px 16px; font-size: 13px; }
+.lc-system { align-self: center; margin: 4px 0; color: var(--muted); font-size: 12px; text-align: center; }
+.lc-compose { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; padding: 12px 18px; border-top: 1px solid var(--line); }
+.lc-compose textarea { resize: vertical; min-height: 44px; }
+.lc-closed-note { margin: 0; padding: 12px 18px; border-top: 1px solid var(--line); font-size: 13px; }
+.lc-back { display: none; margin-bottom: 10px; font-size: 14px; }
+@media (max-width: 1100px) {
+  .lc-layout { grid-template-columns: 1fr; }
+  .lc-layout.has-active .lc-list-card { display: none; }
+  .lc-layout:not(.has-active) .lc-view { display: none; }
+  .lc-back { display: inline-block; }
+  .lc-thread-body { grid-template-columns: 1fr; }
+  .lc-info { border-left: 0; border-top: 1px solid var(--line); }
+  .lc-messages { height: 55vh; }
+}

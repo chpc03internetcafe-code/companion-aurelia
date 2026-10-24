@@ -16,6 +16,7 @@ const NAV = [
     { module: 'profiles', to: '/profiles', label: 'Profiles', icon: '✦' },
     { module: 'profiles', to: '/profile-updates', label: 'Profile updates', icon: '✎', badge: 'profiles' },
     { module: 'members', to: '/members', label: 'Members', icon: '♛', badge: 'members' },
+    { module: 'inquiries', to: '/live-chat', label: 'Live chat', icon: '💬', badge: 'chat' },
     { module: 'inquiries', to: '/inquiries', label: 'Messages', icon: '✉', badge: 'inquiries' },
   ]],
   ['Website', [
@@ -55,7 +56,7 @@ export default function Layout() {
     return () => window.removeEventListener('cms:notification', on);
   }, []);
 
-  // Work-queue badges: booking requests to confirm, membership requests to approve, new messages, profile updates to review.
+  // Work-queue badges: booking requests to confirm, membership requests to approve, new messages, live chats waiting, profile updates to review.
   useEffect(() => {
     const none = Promise.resolve(null);
     Promise.all([
@@ -63,8 +64,9 @@ export default function Layout() {
       can('members') ? api.get('/members/stats') : none,
       can('inquiries') ? api.get('/inquiries/stats') : none,
       can('profiles') ? api.get('/companions/changes/stats') : none,
-    ]).then(([b, m, q, pu]) => setBadges({
-      bookings: (b?.pending || 0) + (b?.inquiries || 0), members: m?.pending || 0, inquiries: q?.new || 0, profiles: pu?.pending || 0,
+      can('inquiries') ? api.get('/live-chat/stats') : none,
+    ]).then(([b, m, q, pu, lc]) => setBadges({
+      bookings: (b?.pending || 0) + (b?.inquiries || 0), members: m?.pending || 0, inquiries: q?.new || 0, profiles: pu?.pending || 0, chat: lc?.waiting || 0,
     })).catch(() => {});
   }, [pathname, can, liveTick]);
   useEffect(() => { setMenuOpen(false); setOpen(false); }, [pathname]);

@@ -505,6 +505,72 @@ await check('encryption: chats, timeline notes and client notes are stored encry
   delete process.env.MESSAGE_ENCRYPTION_KEYS_OLD; resetKeys();
 });
 
+await check('live chat: visitor ↔ desk, long poll, encrypted at rest, private to the browser and permitted staff', async () => {
+  const { driver } = await import('./index.js');
+  const raw = async (sql, p) => (await (await driver()).query(sql, p)).rows;
+  const visitor = client();
+  const secret = 'Is Sofia free on the 14th? My room is 2210';
+  // no chat yet in this browser
+  const none = await visitor('GET', '/site/chat');
+  assert.equal(none.status, 200);
+  assert.equal(none.data.chat, null);
+  // name and message are required for guests
+  const bad = await visitor('POST', '/site/chat', { message: '' });
+  assert.equal(bad.status, 422);
+  assert.ok(bad.data.details.name && bad.data.details.message);
+  const started = await visitor('POST', '/site/chat', { name: 'Chat Tester', email: 'chat.tester@example.com', message: secret, page: '/companions' });
+  assert.equal(started.status, 201, JSON.stringify(started.data));
+  assert.equal(started.data.chat.status, 'Open');
+  assert.equal(started.data.messages[0].body, secret);
+  const ref = started.data.chat.reference;
+  // stored encrypted; the cookie token is stored only as a hash
+  const [row] = await raw('SELECT c.id, c.token_hash, m.body FROM live_chats c JOIN live_chat_messages m ON m.chat_id = c.id WHERE c.reference = $1', [ref]);
+  assert.match(row.body, /^enc:v1:[0-9a-f]{8}:/);
+  assert.ok(!row.body.includes('2210'));
+  assert.match(row.token_hash, /^[0-9a-f]{64}$/);
+  // another browser can't see or write to it
+  const stranger = client();
+  assert.equal((await stranger('GET', '/site/chat')).data.chat, null);
+  assert.equal((await stranger('POST', '/site/chat/messages', { body: 'hi' })).status, 404);
+  // the desk sees it (unread), with the text decrypted
+  const list = await staff('GET', '/live-chat');
+  assert.equal(list.status, 200);
+  const item = list.data.items.find((c) => c.reference === ref);
+  assert.ok(item && item.unread === 1 && item.preview.includes('2210'), JSON.stringify(item));
+  // staff without the Contact Messages permission can't (Profile Editor)
+  const editor = client();
+  await editor('POST', '/admin/auth/login', { email: 'profiles@aurelia.example', password: 'aurelia2026' });
+  assert.equal((await editor('GET', '/live-chat')).status, 403);
+  // the visitor waits; a staff reply wakes the long poll
+  const waiting = visitor('GET', `/site/chat/wait?after=${started.data.messages[0].id}`);
+  await new Promise((r) => setTimeout(r, 300));
+  const reply = await staff('POST', `/live-chat/${item.id}/messages`, { body: 'Yes she is — shall I hold 8 PM?' });
+  assert.equal(reply.status, 201, JSON.stringify(reply.data));
+  assert.equal(reply.data.chat.assignedTo != null, true, 'the first reply assigns the chat');
+  const woke = await waiting;
+  assert.equal(woke.status, 200);
+  assert.ok(woke.data.messages.some((m) => m.from === 'staff' && m.body.startsWith('Yes she is')), JSON.stringify(woke.data));
+  // reading the chat in the CMS clears the unread count
+  await staff('GET', `/live-chat/${item.id}`);
+  assert.equal((await staff('GET', '/live-chat')).data.items.find((c) => c.reference === ref).unread, 0);
+  // message text stays out of the audit trail and notifications
+  const [{ hits }] = await raw("SELECT COUNT(*)::int AS hits FROM audit_log WHERE summary LIKE '%2210%' OR changes LIKE '%2210%' OR summary LIKE '%hold 8 PM%'");
+  assert.equal(hits, 0);
+  const [{ notes }] = await raw("SELECT COUNT(*)::int AS notes FROM notifications WHERE body LIKE '%2210%' OR title LIKE '%2210%'");
+  assert.equal(notes, 0);
+  // closing: the visitor can't write any more; a new chat replaces it
+  const closed = await staff('POST', `/live-chat/${item.id}/close`);
+  assert.equal(closed.data.chat.status, 'Closed');
+  assert.equal((await visitor('POST', '/site/chat/messages', { body: 'still there?' })).status, 409);
+  assert.equal((await visitor('GET', '/site/chat')).data.chat.status, 'Closed');
+  const ended = await visitor('POST', '/site/chat/end');
+  assert.equal(ended.status, 200);
+  assert.equal((await visitor('GET', '/site/chat')).data.chat, null);
+  // every live chat message in the database is ciphertext
+  const [{ plain }] = await raw("SELECT COUNT(*)::int AS plain FROM live_chat_messages WHERE body NOT LIKE 'enc:v1:%'");
+  assert.equal(plain, 0);
+});
+
 const total = results.length;
 console.log(`\n${passed}/${total} checks passed`);
 server.close();

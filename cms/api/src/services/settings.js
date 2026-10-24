@@ -37,6 +37,9 @@ export const defaultSettings = {
   slotMinutes: '30',          // start-time grid
   bufferMinutes: '30',        // gap kept free between two bookings of the same profile
   membersOnlyBooking: '0',    // 1 = only signed-in members can send booking requests
+  // live chat widget on the website (answered in CMS → Live chat)
+  liveChatEnabled: '1',
+  liveChatGreeting: 'Hi! Ask us anything about companions, bookings or VIP membership. Our concierge usually replies within a few minutes during desk hours.',
   bookingPolicy: 'Requests are confirmed by our concierge, usually within an hour during desk hours. You can cancel or reschedule online up to the cut-off shown on your booking. Fees are shown before you confirm and are settled directly as agreed with the concierge.',
   memberPaymentInstructions: 'Pay the membership fee to our GCash 0917 000 0000 (Aurelia Concierge) or BDO 0000-1111-2222, then enter the reference number in your request. We activate your membership after checking the payment.',
   // sign-out after this many minutes without activity (0 = never), per portal

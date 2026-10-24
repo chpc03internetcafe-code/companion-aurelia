@@ -31,7 +31,7 @@ const rankOf = async (req) => (await sessionMember(req))?.tierRank || 0;
 // ---------- Everything the website needs on load ----------
 const PUBLIC_SETTINGS = ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl',
   'telegramUrl', 'whatsappUrl', 'announcement1', 'announcement2', 'announcement3', 'heroTitle', 'heroText', 'currency', 'ageGateEnabled', 'ageGateText',
-  'bookingPolicy', 'memberPaymentInstructions', 'seoTitleSuffix', 'seoDefaultDescription', 'seoOgImage', 'structuredData', 'searchIndexing'];
+  'bookingPolicy', 'memberPaymentInstructions', 'liveChatEnabled', 'liveChatGreeting', 'seoTitleSuffix', 'seoDefaultDescription', 'seoOgImage', 'structuredData', 'searchIndexing'];
 
 // Same for every visitor, so it's cached on the server and briefly at the CDN.
 router.get('/bootstrap', wrap(async (_req, res) => {

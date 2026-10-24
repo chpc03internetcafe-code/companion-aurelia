@@ -85,8 +85,11 @@ const LIMITS = { read: Number(process.env.RATE_LIMIT_READS) || 300, write: Numbe
 const hits = new Map();
 let lastSweep = Date.now();
 
+// Long-poll requests stay open ~20 s each, so they're cheap and never counted.
+export const LONG_POLL_PATHS = new Set(['/api/notifications/wait', '/api/live-chat/wait', '/api/site/chat/wait']);
+
 export function requestLimit(req, res, next) {
-  if (req.path === '/api/health' || req.path === '/api/notifications/wait') return next();
+  if (req.path === '/api/health' || LONG_POLL_PATHS.has(req.path)) return next();
   const now = Date.now();
   if (now - lastSweep > WINDOW_MS) {
     for (const [k, v] of hits) if (v.reset <= now) hits.delete(k);
