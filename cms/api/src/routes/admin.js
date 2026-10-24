@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { one, q, run } from '../db/index.js';
 import { validate } from '../lib/validate.js';
-import { hashPassword, passwordProblem, throttle, verifyPassword } from '../lib/auth.js';
+import { checkPassword, hashPassword, loginLimiter, passwordProblem, throttle, upgradeHash, verifyPassword } from '../lib/auth.js';
 import {
   adminFromToken, checkSetupKey, currentAdmin, effectivePermissions, endAdminSession, LEVELS, MODULES, normalizePermissions,
   requirePermission, revokeSessions, setupKeyRequired, startAdminSession, withinPermissions,
@@ -32,9 +32,9 @@ const userSchema = {
 
 // Creates the first administrator. Only works while there are no staff accounts at all.
 router.post('/auth/setup', wrap(async (req, res) => {
-  throttle(`admin-setup:${clientIp(req)}`, { max: 10 }).fail();
+  await (await throttle(`admin-setup:${clientIp(req)}`, { max: 10 })).fail();
   checkSetupKey(req.body.setupKey);
-  const pwErr = passwordProblem(req.body.password);
+  const pwErr = passwordProblem(req.body.password, req.body.email);
   const data = validate(req.body, { fullName: userSchema.fullName, email: userSchema.email, ...(pwErr ? { password: { type: 'string', check: () => pwErr } } : {}) });
   const created = await one(
     `INSERT INTO admin_users (full_name, email, password_hash, role_id)
@@ -50,11 +50,11 @@ router.post('/auth/setup', wrap(async (req, res) => {
 
 router.post('/auth/login', wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
-  const limiter = throttle(`admin-login:${clientIp(req)}:${email}`, { max: 6 });
+  const limiter = await loginLimiter('admin-login', req, email, 6);
   const u = await one('SELECT id, password_hash, status FROM admin_users WHERE email = $1', [email]);
-  const ok = u && (await verifyPassword(String(req.body.password || ''), u.passwordHash));
+  const ok = await checkPassword(req.body.password, u?.passwordHash);
   if (!ok) {
-    limiter.fail();
+    await limiter.fail();
     await logEvent({ action: 'Sign-in failed', module: 'auth', entityType: 'Staff user', entityId: u?.id ?? null, entityLabel: email || null,
       summary: `Failed sign-in attempt for ${email || '(no email)'}${u ? '' : ' (no such account)'}`, actorType: 'System', userEmail: email || null }, req);
     throw new HttpError(401, 'Incorrect email or password.', { password: 'Incorrect email or password.' });
@@ -63,7 +63,8 @@ router.post('/auth/login', wrap(async (req, res) => {
     await logEvent({ action: 'Sign-in blocked', module: 'auth', entityType: 'Staff user', entityId: u.id, entityLabel: email, summary: `Disabled account ${email} tried to sign in`, actorType: 'System', userEmail: email }, req);
     throw new HttpError(403, 'This account has been disabled. Please contact an administrator.');
   }
-  limiter.clear();
+  await limiter.clear();
+  await upgradeHash('admin_users', u.id, req.body.password, u.passwordHash);
   const user = await adminFromToken(await startAdminSession(req, res, u.id, !!req.body.remember));
   await logEvent({ action: 'Signed in', module: 'auth', entityType: 'Staff user', entityId: user.id, entityLabel: user.email,
     summary: `${user.name} signed in${req.body.remember ? ' (kept signed in for 30 days)' : ''}`, ...asActor(user) }, req);
@@ -90,7 +91,7 @@ router.post('/auth/password', wrap(async (req, res) => {
   if (!(await verifyPassword(String(req.body.currentPassword || ''), passwordHash))) {
     throw new HttpError(422, 'Current password is incorrect.', { currentPassword: 'Current password is incorrect.' });
   }
-  const pwErr = passwordProblem(req.body.newPassword);
+  const pwErr = passwordProblem(req.body.newPassword, req.admin.email);
   if (pwErr) throw new HttpError(422, pwErr, { newPassword: pwErr });
   if (req.body.newPassword === req.body.currentPassword) throw new HttpError(422, 'Choose a different password.', { newPassword: 'Use a different password.' });
   await run('UPDATE admin_users SET password_hash = $1, must_change_password = FALSE, updated_at = now() WHERE id = $2', [await hashPassword(req.body.newPassword), me.id]);
@@ -140,7 +141,7 @@ users.use(requirePermission('users'));
 users.get('/', wrap(async (_req, res) => res.json(await q(`${USER_SELECT} ORDER BY u.full_name`))));
 
 users.post('/', wrap(async (req, res) => {
-  const pwErr = passwordProblem(req.body.password);
+  const pwErr = passwordProblem(req.body.password, req.body.email);
   const data = validate(req.body, { ...userSchema, ...(pwErr ? { password: { type: 'string', check: () => pwErr } } : {}) });
   await assertCanAssign(req.admin, data.roleId);
   const row = await one(

@@ -5,7 +5,7 @@ import { api } from '../utils/api';
 import { breadcrumbLd, useSeo } from '../utils/seo';
 import { day, duration, money, time12, timeAgo, todayIso, weekday, WEEKDAYS } from '../utils/format';
 import ProfileCard, { FavoriteButton, ShareButton } from '../components/ProfileCard';
-import { Crumbs, Loading, Photo, SectionHead } from '../components/Common';
+import { Crumbs, PageSkeleton, Photo, SectionHead } from '../components/Common';
 import { IconBack, IconCalendar, IconCheck, IconChevron, IconClock, IconCrown, IconGlobe, IconLock, IconPin, IconPlay, IconShield } from '../components/Icons';
 import NotFound from './NotFound';
 
@@ -35,7 +35,7 @@ function Gallery({ p }) {
           ? (embed(cur.url)
             ? <iframe src={embed(cur.url)} title={cur.alt || `${p.name} video`} allow="encrypted-media; picture-in-picture" allowFullScreen />
             : <video src={cur.url} poster={cur.posterUrl || undefined} controls playsInline preload="metadata" aria-label={cur.alt || `${p.name} video`} />)
-          : <Photo src={cur.url} alt={cur.alt || `${p.name}`} name={p.name} />}
+          : <Photo src={cur.url} alt={cur.alt || `${p.name}`} name={p.name} priority={i === 0} />}
         {items.length > 1 && <>
           <button className="icon-btn gallery-nav prev" onClick={() => go(-1)} aria-label="Previous photo"><IconBack size={18} /></button>
           <button className="icon-btn gallery-nav next" onClick={() => go(1)} aria-label="Next photo"><IconChevron size={18} /></button>
@@ -47,7 +47,7 @@ function Gallery({ p }) {
         <div className="thumbs" role="list">
           {items.map((m, k) => (
             <button key={m.id} className={k === i ? 'on' : ''} onClick={() => setI(k)} aria-label={`${m.kind === 'video' ? 'Video' : 'Photo'} ${k + 1}`} role="listitem">
-              {m.kind === 'video' ? <><Photo src={m.posterUrl} name="▶" /><span className="vid"><IconPlay size={22} /></span></> : <img src={m.url} alt="" loading="lazy" />}
+              {m.kind === 'video' ? <><Photo src={m.posterUrl} name="▶" /><span className="vid"><IconPlay size={22} /></span></> : <img src={m.url} alt="" loading="lazy" decoding="async" />}
             </button>
           ))}
           {locked > 0 && <Link to="/vip" className="thumbs-locked" style={{ flex: 'none', width: 76, aspectRatio: '4 / 5', borderRadius: 12, border: '1px dashed var(--primary)', display: 'grid', placeItems: 'center', textAlign: 'center', fontSize: '0.72rem', fontWeight: 800, color: 'var(--primary)', padding: 4 }}>
@@ -107,7 +107,7 @@ export default function ProfilePage() {
     ],
   } : { title: state.info?.name || 'Profile', noindex: true });
 
-  if (state.loading) return <Loading />;
+  if (state.loading) return <PageSkeleton media />;
   if (state.error === 404) return <NotFound />;
   if (state.error === 410) {
     return (

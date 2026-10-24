@@ -11,7 +11,8 @@
 import { q, run } from '../db/index.js';
 import { clientIp } from './http.js';
 
-const SECRET = /password|token|hash|secret/i;
+// fields that are never written to the audit trail (credentials, two-step secrets and backup codes, ID-check notes)
+const SECRET = /password|token|hash|secret|totp|backup|mfa|otp|apikey|api_key|cookie|verification_?notes/i;
 const SKIP_FIELDS = new Set(['id', 'createdAt', 'updatedAt', 'lastLoginAt', 'lastSeenAt', 'fullName']);
 const MAX_TEXT = 500;
 

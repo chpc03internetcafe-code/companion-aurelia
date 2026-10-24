@@ -28,7 +28,11 @@ export default function Chat({ path, extra = {}, title = 'Messages', placeholder
     if (r.messages.length) onRead?.();
   }, [onRead]);
 
-  const poll = useCallback(() => api('GET', `${path}${qs({ ...JSON.parse(extraKey), after: lastId.current || undefined })}`).then(merge), [path, extraKey, merge]);
+  const poll = useCallback(() => {
+    // a guest's email is sent as a header so it stays out of URLs (and server logs)
+    const { email, ...rest } = JSON.parse(extraKey);
+    return api('GET', `${path}${qs({ ...rest, after: lastId.current || undefined })}`, null, email ? { headers: { 'X-Booking-Email': email } } : undefined).then(merge);
+  }, [path, extraKey, merge]);
 
   useEffect(() => {
     lastId.current = 0;

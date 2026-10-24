@@ -2,6 +2,7 @@
 // The API enforces every permission; this only decides what to show.
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from './api';
+import { markActive } from './idle';
 
 const AuthContext = createContext(null);
 const RANK = { none: 0, view: 1, manage: 2 };
@@ -51,18 +52,23 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const signedIn = (user) => setState((s) => ({ ...s, user, setup: { ...s.setup, needed: false }, expired: false }));
+  const signedIn = (user) => {
+    markActive();
+    setState((s) => ({ ...s, user, setup: { ...s.setup, needed: false }, expired: false }));
+  };
   const login = async (email, password, remember) => signedIn((await api.post('/admin/auth/login', { email, password, remember })).user);
   const setupFirstAdmin = async (body) => signedIn((await api.post('/admin/auth/setup', body)).user);
   const changePassword = async (currentPassword, newPassword) => signedIn((await api.post('/admin/auth/password', { currentPassword, newPassword })).user);
-  const logout = async () => {
+  const signOut = async (expired) => {
     await api.post('/admin/auth/logout').catch(() => {});
-    setState((s) => ({ ...s, user: null, expired: false }));
+    setState((s) => ({ ...s, user: null, expired }));
   };
+  const logout = () => signOut(false);
+  const idleLogout = () => signOut('idle');
   const can = useCallback((module, level = 'view') => !!state.user && RANK[state.user.permissions?.[module] || 'none'] >= RANK[level], [state.user]);
 
   return (
-    <AuthContext.Provider value={{ ...state, refresh, login, logout, setupFirstAdmin, changePassword, can }}>
+    <AuthContext.Provider value={{ ...state, refresh, login, logout, idleLogout, setupFirstAdmin, changePassword, can }}>
       {children}
     </AuthContext.Provider>
   );

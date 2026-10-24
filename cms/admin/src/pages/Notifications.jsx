@@ -8,7 +8,7 @@ const MODULE_LABELS = { bookings: 'Bookings', profiles: 'Profiles', members: 'Me
 
 export default function Notifications() {
   const { open, markAllRead, syncUnread, enabled } = useNotifications();
-  const [filter, setFilter] = useState({ unread: false, module: '' });
+  const [filter, setFilter] = useState({ unread: true, module: '' });
   const [state, setState] = useState({ items: [], hasMore: false, loading: true });
 
   const load = async (before) => {
@@ -40,7 +40,10 @@ export default function Notifications() {
         {state.loading ? <Loading /> : state.items.length ? (
           <div>
             {state.items.map((n) => (
-              <button key={n.id} className={`notif-item ${n.isRead ? '' : 'unread'}`} onClick={() => open(n)}>
+              <button key={n.id} className={`notif-item ${n.isRead ? '' : 'unread'}`} onClick={() => {
+                if (filter.unread) setState((s) => ({ ...s, items: s.items.filter((x) => x.id !== n.id) }));
+                open(n);
+              }}>
                 <i aria-hidden="true">{MODULE_ICONS[n.module]}</i>
                 <span><strong>{n.title}</strong>{n.body && <small>{n.body}</small>}<time dateTime={n.createdAt} title={dateTime(n.createdAt)}>{timeAgo(n.createdAt)}</time></span>
               </button>

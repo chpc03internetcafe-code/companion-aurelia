@@ -115,8 +115,20 @@ export function Empty({ title, text, action, icon = '◇' }) {
   );
 }
 
-export function Loading({ text = 'Loading…' }) {
-  return <div className="loading"><span className="spinner" aria-hidden="true" />{text}</div>;
+// Loading skeleton: placeholder rows shaped like a list, shown while data loads.
+const SKELETON_WIDTHS = ['72%', '58%', '84%', '64%', '76%', '52%', '68%', '80%'];
+export function Loading({ text = 'Loading…', rows = 5 }) {
+  return (
+    <div className="skeleton" role="status" aria-label={text}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="skeleton-row" aria-hidden="true">
+          <span className="skel skel-thumb" />
+          <span className="skel-lines"><span className="skel" style={{ width: SKELETON_WIDTHS[i % SKELETON_WIDTHS.length] }} /><span className="skel skel-sub" /></span>
+          <span className="skel skel-pill" />
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function ErrorBox({ error, onRetry }) {
@@ -234,6 +246,18 @@ export function useDebounced(value, ms = 300) {
     return () => clearTimeout(t);
   }, [value, ms]);
   return v;
+}
+
+/** Pages a list that's already in the browser. Returns the rows for the current page and a <Pager />. resetKey (e.g. the search text) jumps back to page 1. */
+export function usePaged(rows, { pageSize = 50, resetKey } = {}) {
+  const [p, setP] = useState({ page: 1, pageSize });
+  useEffect(() => { setP((s) => ({ ...s, page: 1 })); }, [resetKey]);
+  const pages = Math.max(1, Math.ceil(rows.length / p.pageSize));
+  const page = Math.min(p.page, pages);
+  return {
+    items: rows.slice((page - 1) * p.pageSize, page * p.pageSize),
+    pager: rows.length > 25 ? <Pager page={page} pageSize={p.pageSize} total={rows.length} onChange={(x) => setP((s) => ({ ...s, ...x }))} /> : null,
+  };
 }
 
 /** Filters kept in the URL (?status=…&page=2) so lists survive reloads and links. */

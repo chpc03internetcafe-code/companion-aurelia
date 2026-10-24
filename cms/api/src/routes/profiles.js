@@ -1,15 +1,14 @@
 // CMS: profiles — details, verification, visibility, media, rates, weekly availability, time off, retiring.
 import { Router } from 'express';
-import multer from 'multer';
 import { one, params, q, run, tx } from '../db/index.js';
 import { HttpError, idParam, paging, wrap } from '../lib/http.js';
 import { slugify, validate } from '../lib/validate.js';
 import { logEvent } from '../lib/audit.js';
-import { removeImages, saveImage } from '../lib/storage.js';
+import { removeImages, saveImage, imageUpload } from '../lib/storage.js';
 import { parseBlocks, parseTimeOff, saveSchedule, saveTimeOff } from '../services/schedule.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 12 } });
+const upload = imageUpload(12);
 export const PROFILE_STATUSES = ['Draft', 'Published', 'Hidden', 'Retired'];
 
 const validateAttributes = (v) => {

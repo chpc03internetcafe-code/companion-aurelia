@@ -234,6 +234,17 @@ button.stat:hover, a.stat:hover { border-color: var(--primary); }
 .empty strong { color: var(--ink); font-size: 15px; }
 .empty p { max-width: 420px; }
 .loading { display: flex; gap: 10px; align-items: center; justify-content: center; padding: 40px; color: var(--muted); }
+/* loading skeleton */
+.skeleton { padding: 8px 18px 14px; }
+.skeleton-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.skeleton-row:last-child { border-bottom: 0; }
+.skel { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--line) 25%, #f4efe7 37%, var(--line) 63%); background-size: 400% 100%; animation: skel 1.4s ease infinite; }
+.skel-thumb { width: 36px; height: 44px; border-radius: 8px; flex: none; }
+.skel-lines { flex: 1; display: grid; gap: 8px; }
+.skel-sub { width: 35%; height: 10px; }
+.skel-pill { width: 64px; height: 20px; border-radius: 999px; flex: none; }
+@keyframes skel { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
 .spinner { width: 18px; height: 18px; border: 2px solid var(--line-strong); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }

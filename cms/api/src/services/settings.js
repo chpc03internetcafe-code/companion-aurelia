@@ -1,5 +1,6 @@
 // Site settings (key/value), with defaults so new settings never need a schema change.
 import { q } from '../db/index.js';
+import { cached } from '../lib/cache.js';
 import { DEFAULT_THEME } from '../lib/themes.js';
 
 export const defaultSettings = {
@@ -38,6 +39,10 @@ export const defaultSettings = {
   membersOnlyBooking: '0',    // 1 = only signed-in members can send booking requests
   bookingPolicy: 'Requests are confirmed by our concierge, usually within an hour during desk hours. You can cancel or reschedule online up to the cut-off shown on your booking. Fees are shown before you confirm and are settled directly as agreed with the concierge.',
   memberPaymentInstructions: 'Pay the membership fee to our GCash 0917 000 0000 (Aurelia Concierge) or BDO 0000-1111-2222, then enter the reference number in your request. We activate your membership after checking the payment.',
+  // sign-out after this many minutes without activity (0 = never), per portal
+  staffIdleMinutes: '30',     // CMS
+  companionIdleMinutes: '30', // companion portal
+  memberIdleMinutes: '60',    // member accounts on the website
   // SEO
   seoTitleSuffix: ' · Aurelia Companions',
   seoDefaultDescription: 'Verified companion directory with published rates, live availability, city guides and online booking requests.',
@@ -46,17 +51,27 @@ export const defaultSettings = {
   searchIndexing: '1',        // 0 = ask search engines not to index the site (staging)
 };
 
+// Read on almost every request, so cached briefly (cleared whenever settings are saved).
 export async function loadSettings() {
-  const rows = await q('SELECT key, value FROM site_settings');
-  const out = { ...defaultSettings };
-  for (const r of rows) if (r.key in out) out[r.key] = r.value ?? '';
-  return out;
+  const saved = await cached('settings', 60_000, async () => {
+    const rows = await q('SELECT key, value FROM site_settings');
+    const out = { ...defaultSettings };
+    for (const r of rows) if (r.key in out) out[r.key] = r.value ?? '';
+    return out;
+  });
+  return { ...saved };
 }
 
 export const num = (v, fallback) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 };
+
+/** Idle sign-out per portal, in minutes (0 = off). */
+export function idleMinutes(s) {
+  const m = (v, fallback) => Math.max(0, Math.round(num(v, fallback)));
+  return { staff: m(s.staffIdleMinutes, 30), companion: m(s.companionIdleMinutes, 30), member: m(s.memberIdleMinutes, 60) };
+}
 
 /** The parts of the settings the booking rules use, as numbers/booleans. */
 export async function bookingRules(settings) {

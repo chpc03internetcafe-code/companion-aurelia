@@ -8,6 +8,10 @@ import { closeDb, one, q } from './index.js';
 import { addDays, phDate } from '../lib/dates.js';
 import { totpCode } from '../lib/totp.js';
 
+// Each test client gets a random X-Forwarded-For address, as if behind one trusted proxy, so the per-IP
+// limits don't trip during the run.
+process.env.TRUST_PROXY = '1';
+
 const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
 const base = `http://127.0.0.1:${server.address().port}/api`;
 let passed = 0;
@@ -15,11 +19,12 @@ const results = [];
 
 function client() {
   let cookie = '';
-  return async (method, url, body) => {
+  return async (method, url, body, extraHeaders = {}) => {
+    const form = body instanceof FormData;
     const res = await fetch(base + url, {
       method,
-      headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}), 'X-Forwarded-For': `10.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}` },
-      body: body ? JSON.stringify(body) : undefined,
+      headers: { ...(body && !form ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}), 'X-Forwarded-For': `10.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250)}`, ...extraHeaders },
+      body: body ? (form ? body : JSON.stringify(body)) : undefined,
     });
     const set = res.headers.getSetCookie?.() || [];
     for (const c of set) {
@@ -62,6 +67,13 @@ await check('health + bootstrap', async () => {
   const { data } = await guest('GET', '/site/bootstrap');
   assert.ok(data.categories.length >= 3 && data.locations.length > 5 && data.tiers.length >= 2);
   assert.ok(data.theme.vars['--primary']);
+});
+
+await check('performance: compressed responses and CDN cache headers', async () => {
+  const res = await fetch(`${base}/site/bootstrap`, { headers: { 'Accept-Encoding': 'gzip' } });
+  assert.equal(res.headers.get('content-encoding'), 'gzip');
+  assert.match(res.headers.get('cache-control'), /s-maxage=\d+/);
+  assert.match(res.headers.get('vary'), /Accept-Encoding/);
 });
 
 await check('home: featured, recent, available-today count', async () => {
@@ -126,10 +138,10 @@ await check('booking request → reference, status lookup, taken slot rejected',
   booking = r.data;
   const again = await guest('POST', '/site/bookings', { ...body, email: 'other@example.com' });
   assert.equal(again.status, 409);
-  const look = await guest('GET', `/site/bookings/${booking.reference}?email=smoke@example.com`);
+  const look = await guest('GET', `/site/bookings/${booking.reference}`, null, { 'X-Booking-Email': 'smoke@example.com' });
   assert.equal(look.data.status, 'Pending');
   assert.ok(look.data.timeline.length >= 1);
-  const wrong = await guest('GET', `/site/bookings/${booking.reference}?email=nobody@example.com`);
+  const wrong = await guest('GET', `/site/bookings/${booking.reference}`, null, { 'X-Booking-Email': 'nobody@example.com' });
   assert.equal(wrong.status, 404);
   const noConsent = await guest('POST', '/site/bookings', { ...body, consent: false });
   assert.equal(noConsent.status, 422);
@@ -157,7 +169,9 @@ await check('profile inquiry without a date', async () => {
 await check('member sign-up: 18+ check, email confirmation link, session', async () => {
   const minor = await member('POST', '/account/register', { firstName: 'Young', lastName: 'Person', email: 'young@example.com', birthdate: addDays(today, -365 * 17), password: 'password123', terms: true });
   assert.equal(minor.status, 422);
-  const r = await member('POST', '/account/register', { firstName: 'Smoke', lastName: 'Member', email: 'smoke.member@example.com', birthdate: '1990-05-05', password: 'password123', terms: true });
+  const common = await member('POST', '/account/register', { firstName: 'Smoke', lastName: 'Member', email: 'smoke.member@example.com', birthdate: '1990-05-05', password: 'password123', terms: true });
+  assert.equal(common.status, 422, 'common passwords are refused');
+  const r = await member('POST', '/account/register', { firstName: 'Smoke', lastName: 'Member', email: 'smoke.member@example.com', birthdate: '1990-05-05', password: 'Velvet-Harbor-42', terms: true });
   assert.equal(r.status, 201);
   if (r.data.devLink) {
     const token = new URL(r.data.devLink).searchParams.get('token');
@@ -185,10 +199,14 @@ await check('demo member: VIP access, favourites, collections, membership, sessi
   const ms = (await m('GET', '/account/me/membership')).data;
   assert.equal(ms.current.active, true);
   assert.ok((await m('GET', '/account/me/sessions')).data.some((s) => s.current));
-  const posts = (await m('GET', '/site/posts')).data;
-  assert.ok(posts.some((p) => p.audience === 'Members' && !p.locked));
-  const guestPosts = (await guest('GET', '/site/posts')).data;
-  assert.ok(guestPosts.filter((p) => p.audience === 'Members').every((p) => p.locked));
+  const posts = (await m('GET', '/site/posts?pageSize=48')).data;
+  assert.ok(posts.items.some((p) => p.audience === 'Members' && !p.locked));
+  const guestPosts = (await guest('GET', '/site/posts?pageSize=48')).data;
+  assert.ok(guestPosts.items.filter((p) => p.audience === 'Members').every((p) => p.locked));
+  const page2 = (await guest('GET', '/site/posts?pageSize=1&page=2')).data;
+  assert.equal(page2.items.length, 1);
+  assert.equal(page2.total, guestPosts.total);
+  assert.notEqual(page2.items[0].slug, guestPosts.items[0].slug);
 });
 
 await check('member requests a membership → staff approves → tier active', async () => {
@@ -205,6 +223,15 @@ await check('member requests a membership → staff approves → tier active', a
   assert.equal(ok.status, 200, JSON.stringify(ok.data));
   assert.equal(ok.data.vipActive, true);
   assert.equal((await member('GET', '/account/session')).data.user.vipActive, true);
+});
+
+await check('server cache: a saved setting shows on the website straight away', async () => {
+  const before = (await guest('GET', '/site/bootstrap')).data.site.heroTitle; // now cached
+  const changed = `${before} (smoke)`;
+  assert.equal((await staff('PUT', '/settings', { heroTitle: changed })).status, 200);
+  assert.equal((await guest('GET', '/site/bootstrap')).data.site.heroTitle, changed);
+  await staff('PUT', '/settings', { heroTitle: before });
+  assert.equal((await guest('GET', '/site/bootstrap')).data.site.heroTitle, before);
 });
 
 await check('CMS: lists, dashboard, booking status change with timeline, audit', async () => {
@@ -385,6 +412,58 @@ await check('database constraints: adults only, publish requires ID check', asyn
   const overlaps = await q(`SELECT a.id FROM bookings a JOIN bookings b ON a.profile_id = b.profile_id AND a.id < b.id
     WHERE a.kind = 'Booking' AND b.kind = 'Booking' AND a.status IN ('Pending','Confirmed') AND b.status IN ('Pending','Confirmed') AND a.starts_at < b.ends_at AND b.starts_at < a.ends_at`);
   assert.equal(overlaps.length, 0, 'no overlapping active bookings');
+});
+
+await check('security: headers, cross-site requests, CORS, uploads, password hashing, webhooks, CSV', async () => {
+  const res = await fetch(`${base}/health`);
+  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(res.headers.get('x-frame-options'), 'DENY');
+  assert.match(res.headers.get('content-security-policy'), /default-src 'none'/);
+  assert.equal(res.headers.get('x-powered-by'), null);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  // a form or script on another website can't make changes with the visitor's cookies
+  const evil = await fetch(`${base}/account/login`, { method: 'POST', headers: { Origin: 'https://evil.example', 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(evil.status, 403);
+  const preflight = await fetch(`${base}/site/bootstrap`, { headers: { Origin: 'https://evil.example' } });
+  assert.equal(preflight.headers.get('access-control-allow-origin'), null, 'other sites get no CORS access');
+  // uploads: a text file named .jpg, and a real-looking JPEG header with garbage after it, are both refused
+  const { id: profileId } = (await staff('GET', '/profiles?pageSize=1')).data.items[0];
+  const fake = new FormData();
+  fake.append('photos', new Blob(['<script>alert(1)</script>'], { type: 'image/jpeg' }), 'photo.jpg');
+  assert.equal((await staff('POST', `/profiles/${profileId}/media`, fake)).status, 422);
+  const broken = new FormData();
+  broken.append('photos', new Blob([Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(2000, 7)])], { type: 'image/jpeg' }), 'broken.jpg');
+  assert.equal((await staff('POST', `/profiles/${profileId}/media`, broken)).status, 422);
+  const svg = new FormData();
+  svg.append('photos', new Blob(['<svg xmlns="http://www.w3.org/2000/svg"/>'], { type: 'image/svg+xml' }), 'x.svg');
+  assert.equal((await staff('POST', `/profiles/${profileId}/media`, svg)).status, 422);
+  // passwords: current cost in the hash, older hashes still verify and are flagged for upgrade
+  const { hashPassword, verifyPassword, needsRehash, passwordProblem } = await import('../lib/auth.js');
+  const h = await hashPassword('Velvet-Harbor-42');
+  assert.match(h, /^scrypt\$65536\$8\$2\$/);
+  assert.equal(await verifyPassword('Velvet-Harbor-42', h), true);
+  assert.equal(await verifyPassword('velvet-harbor-42', h), false);
+  assert.equal(needsRehash(h), false);
+  const crypto = await import('node:crypto');
+  const salt = crypto.randomBytes(16);
+  const legacy = `scrypt$${salt.toString('base64')}$${crypto.scryptSync('old-password-1', salt, 64).toString('base64')}`;
+  assert.equal(await verifyPassword('old-password-1', legacy), true);
+  assert.equal(needsRehash(legacy), true);
+  assert.ok(passwordProblem('qwerty123') && passwordProblem('jane.doe2024', 'jane.doe@example.com') && !passwordProblem('Velvet-Harbor-42'));
+  // webhooks: valid signature accepted; tampered body, wrong secret and stale timestamp refused
+  const { checkSignature } = await import('../lib/webhooks.js');
+  const ts = Math.floor(Date.now() / 1000);
+  const body = Buffer.from('{"event":"paid"}');
+  const sig = `sha256=${crypto.createHmac('sha256', 'whsec_test').update(`${ts}.`).update(body).digest('hex')}`;
+  assert.equal(checkSignature({ secret: 'whsec_test', rawBody: body, timestamp: ts, signature: sig }), true);
+  assert.equal(checkSignature({ secret: 'whsec_test', rawBody: Buffer.from('{"event":"refund"}'), timestamp: ts, signature: sig }), false);
+  assert.equal(checkSignature({ secret: 'other', rawBody: body, timestamp: ts, signature: sig }), false);
+  assert.equal(checkSignature({ secret: 'whsec_test', rawBody: body, timestamp: ts - 3600, signature: sig }), false);
+  // CSV exports: text that Excel would run as a formula is neutralised
+  const { sendCsv } = await import('../lib/http.js');
+  let out = '';
+  sendCsv({ setHeader() {}, send: (s) => { out = s; } }, 'x.csv', ['Name', 'Total'], [['=HYPERLINK("http://evil")', 1500], ['@SUM(A1)', -20]]);
+  assert.ok(out.includes(`"'=HYPERLINK(""http://evil"")"`) && out.includes("'@SUM(A1)") && out.includes(',-20'), out);
 });
 
 const total = results.length;

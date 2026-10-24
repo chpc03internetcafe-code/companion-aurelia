@@ -33,11 +33,24 @@ async function createPgDriver() {
   pg.types.setTypeParser(NUMERIC, (v) => (v == null ? null : parseFloat(v)));
   pg.types.setTypeParser(INT8, (v) => (v == null ? null : Number(v)));
   pg.types.setTypeParser(DATE, (v) => v);
+  // Connection pool, reused by every request this instance serves. On Vercel each function instance keeps a
+  // few connections and should point at Supabase's transaction pooler (PgBouncer, port 6543), which shares a
+  // small number of real database connections between all instances.
+  const url = process.env.DATABASE_URL;
+  if (process.env.VERCEL && /supabase\.(co|com)/.test(url) && !/:6543\//.test(url)) {
+    console.warn('[db] DATABASE_URL is not the Supabase transaction pooler (port 6543). Serverless instances may run out of connections.');
+  }
   const pool = new pg.Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL) ? false : { rejectUnauthorized: false },
-    max: process.env.VERCEL ? 3 : 10,
+    connectionString: url,
+    ssl: /localhost|127\.0\.0\.1/.test(url) ? false : { rejectUnauthorized: false },
+    max: Number(process.env.PG_POOL_MAX) || (process.env.VERCEL ? 3 : 10),
+    idleTimeoutMillis: process.env.VERCEL ? 5_000 : 30_000, // give idle connections back quickly when serverless
+    connectionTimeoutMillis: 10_000,                         // fail fast instead of hanging when the pool is exhausted
+    keepAlive: true,
+    allowExitOnIdle: true,
   });
+  // A dropped idle connection (database restart, pooler timeout) must not crash the process; the pool replaces it.
+  pool.on('error', (err) => console.error('[db] idle connection error:', err.message));
   return {
     kind: 'postgres',
     query: async (text, params) => {

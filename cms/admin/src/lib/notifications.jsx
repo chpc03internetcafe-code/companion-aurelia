@@ -68,18 +68,26 @@ export function NotificationsProvider({ children }) {
   const setSound = (on) => { setSoundState(on); store.set(SOUND_KEY, on ? 'on' : 'off'); };
   const enableDesktop = async () => { if (desktopSupported) setPermission(await Notification.requestPermission()); };
 
+  // The bell lists unread notifications only; this refills it from the server.
+  const loadUnread = useCallback(async () => {
+    const r = await api.get('/notifications', { unread: 1, limit: BELL_SIZE });
+    setItems(r.items);
+    setUnread(r.unread);
+    return r;
+  }, []);
+
   const open = useCallback((n) => {
     if (!n.isRead) {
-      setItems((list) => list.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)));
-      api.post('/notifications/read', { ids: [n.id] }).then((r) => setUnread(r.unread)).catch(() => {});
+      setItems((list) => list.filter((x) => x.id !== n.id));
+      api.post('/notifications/read', { ids: [n.id] }).then(() => loadUnread()).catch(() => {});
     }
     setPops((p) => p.filter((x) => x.id !== n.id));
     if (n.link) navigate(n.link);
-  }, [navigate]);
+  }, [navigate, loadUnread]);
 
   const markAllRead = useCallback(async () => {
     const r = await api.post('/notifications/read', { all: true });
-    setItems((list) => list.map((x) => ({ ...x, isRead: true })));
+    setItems([]);
     setUnread(r.unread);
     window.dispatchEvent(new CustomEvent('cms:notifications-read'));
   }, []);
@@ -113,10 +121,8 @@ export function NotificationsProvider({ children }) {
       while (!stopped) {
         try {
           if (!lastId.current) {
-            const r = await api.get('/notifications', { limit: BELL_SIZE });
+            const r = await loadUnread();
             if (stopped) return;
-            setItems(r.items);
-            setUnread(r.unread);
             lastId.current = r.latestId || -1;
           }
           controller = new AbortController();
@@ -138,7 +144,7 @@ export function NotificationsProvider({ children }) {
       }
     })();
     return () => { stopped = true; controller?.abort(); };
-  }, [user?.id, enabled, arrive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user?.id, enabled, arrive, loadUnread]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <NotificationsContext.Provider value={{ enabled, items, unread, connected, open, markAllRead, syncUnread, sound, setSound, permission, enableDesktop }}>

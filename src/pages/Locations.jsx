@@ -4,7 +4,7 @@ import { useSite } from '../context/SiteContext';
 import { api } from '../utils/api';
 import { breadcrumbLd, useSeo } from '../utils/seo';
 import { day } from '../utils/format';
-import { Loading, PageHero, Sections, SectionHead } from '../components/Common';
+import { PageHero, PageSkeleton, Sections, SectionHead } from '../components/Common';
 import { DirectoryResults } from './Directory';
 import NotFound from './NotFound';
 
@@ -51,7 +51,7 @@ export function LocationPage() {
     description: l.metaDescription || l.intro, image: l.imageUrl,
     jsonLd: [breadcrumbLd(crumbs), { '@type': 'CollectionPage', name: `Companions in ${l.name}`, description: l.intro || undefined, dateModified: l.updatedAt }],
   } : { title: 'Location', noindex: !!state.error });
-  if (state.loading) return <Loading />;
+  if (state.loading) return <PageSkeleton />;
   if (state.error === 404) return <NotFound />;
   if (state.error) return <div className="narrow section"><div className="notice error">This page couldn’t be loaded.</div></div>;
 

@@ -4,7 +4,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useUi } from '../lib/ui';
 import { dateTime } from '../lib/format';
-import { Counter, Empty, ErrorBox, Field, Loading, Modal, PageHead, Pill, SearchBox, Tabs, Toggle, useAction, useForm, useLoad, useQueryState } from '../components/kit';
+import { Counter, Empty, ErrorBox, Field, Loading, Modal, PageHead, Pill, SearchBox, Tabs, Toggle, useAction, useForm, useLoad, usePaged, useQueryState } from '../components/kit';
 
 function RedirectModal({ r, onClose, onSaved }) {
   const { form, set, setForm, errors, saving, submit } = useForm(r?.id ? r : { fromPath: '', toPath: '', statusCode: 301, note: '', isActive: true });
@@ -28,9 +28,10 @@ function Redirects({ manage }) {
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState('');
   const [run] = useAction();
+  const rows = (data || []).filter((r) => !search || `${r.fromPath} ${r.toPath} ${r.note || ''}`.toLowerCase().includes(search.toLowerCase()));
+  const { items, pager } = usePaged(rows, { resetKey: search });
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} onRetry={reload} />;
-  const rows = data.filter((r) => !search || `${r.fromPath} ${r.toPath} ${r.note || ''}`.toLowerCase().includes(search.toLowerCase()));
   return (
     <div className="card">
       <div className="filters">
@@ -41,7 +42,7 @@ function Redirects({ manage }) {
       {rows.length ? (
         <table className="table">
           <thead><tr><th>From</th><th>To</th><th>Type</th><th>Visits</th><th>Active</th>{manage && <th />}</tr></thead>
-          <tbody>{rows.map((r) => (
+          <tbody>{items.map((r) => (
             <tr key={r.id}>
               <td className="mono">{r.fromPath}{r.note && <span className="sub">{r.note}</span>}</td>
               <td className="mono">{r.toPath}</td>
@@ -53,6 +54,7 @@ function Redirects({ manage }) {
           ))}</tbody>
         </table>
       ) : <Empty icon="⤳" title="No redirects" text="Redirects are added automatically when you change a URL or retire a profile; add your own for old site links." />}
+      {pager}
       {modal && <RedirectModal r={modal} onClose={() => setModal(null)} onSaved={(x) => { setModal(null); setData(Array.isArray(x) ? x : x.redirects); }} />}
     </div>
   );

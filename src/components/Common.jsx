@@ -73,6 +73,66 @@ export function Loading({ text = 'Loading…' }) {
   return <div className="loading"><span className="spinner" aria-hidden="true" />{text}</div>;
 }
 
+// ---------- Loading skeletons: grey placeholders shaped like the content that's on its way ----------
+const Bone = ({ w, h, r, style }) => <span className="skel" style={{ width: w, height: h, borderRadius: r, ...style }} />;
+
+/** Placeholder profile cards for a grid that's loading. */
+export function CardsSkeleton({ count = 8, className = 'grid-cards' }) {
+  return (
+    <div className={className} role="status" aria-label="Loading">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="p-card skel-card" aria-hidden="true">
+          <div className="p-card-media skel" />
+          <div className="p-card-body"><Bone w="85%" h={12} /><Bone w="55%" h={12} style={{ marginTop: 10 }} /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Placeholder article cards (guides, news). */
+export function PostsSkeleton({ count = 3 }) {
+  return (
+    <div className="grid-3" role="status" aria-label="Loading">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className="post-card" aria-hidden="true">
+          <div className="post-cover skel" />
+          <div className="post-card-body"><Bone w="40%" h={10} /><Bone w="90%" h={18} style={{ marginTop: 10 }} /><Bone w="100%" h={12} style={{ marginTop: 10 }} /><Bone w="70%" h={12} style={{ marginTop: 6 }} /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Placeholder for a whole page: heading, intro and a few paragraphs (or a photo + text for profiles). */
+export function PageSkeleton({ media = false }) {
+  return (
+    <section className="section" role="status" aria-label="Loading">
+      <div className={`container ${media ? 'skel-split' : 'narrow'}`} aria-hidden="true">
+        {media && <div className="gallery-main skel" />}
+        <div>
+          <Bone w={120} h={12} />
+          <Bone w="70%" h={40} r={10} style={{ marginTop: 16 }} />
+          <Bone w="90%" h={14} style={{ marginTop: 22 }} />
+          <Bone w="80%" h={14} style={{ marginTop: 10 }} />
+          <Bone w="85%" h={14} style={{ marginTop: 10 }} />
+          <Bone w="60%" h={14} style={{ marginTop: 10 }} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** value, delayed until it has stopped changing for ms (search-as-you-type without a request per keystroke). */
+export function useDebounced(value, ms = 400) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return v;
+}
+
 export function Empty({ title, text, action }) {
   return <div className="empty"><strong>{title}</strong>{text && <p>{text}</p>}{action}</div>;
 }
@@ -81,10 +141,12 @@ export function Status({ value }) {
   return <span className={`status status-${value}`}>{value}</span>;
 }
 
-export function Photo({ src, alt, name, className = '' }) {
+// Images load lazily (only when scrolled near) unless priority is set for the main above-the-fold picture.
+export function Photo({ src, alt, name, className = '', priority = false }) {
   const [broken, setBroken] = useState(false);
   return src && !broken
-    ? <img className={className} src={src} alt={alt || name || ''} loading="lazy" onError={() => setBroken(true)} />
+    ? <img className={className} src={src} alt={alt || name || ''} loading={priority ? 'eager' : 'lazy'} decoding="async" fetchpriority={priority ? 'high' : undefined}
+      onError={() => setBroken(true)} />
     : <span className={`photo-missing ${className}`} aria-hidden="true">{initials(name || '?')}</span>;
 }
 

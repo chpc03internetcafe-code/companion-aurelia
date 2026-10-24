@@ -11,6 +11,7 @@ import { Empty, Field, Loading, Photo, Status } from '../components/Common';
 import { IconBell, IconChat, IconCheck, IconClose, IconLock } from '../components/Icons';
 import { Security, TwoStepForm } from '../components/AccountSecurity';
 import Chat from '../components/Chat';
+import { IdleWarning, markActive, useIdleTimeout } from '../components/IdleTimeout';
 
 const BASE = '/companion';
 
@@ -410,7 +411,7 @@ function ProfileTab({ refresh }) {
             <div className="photo-grid">
               {pendingPhotos.map((r) => (
                 <figure key={r.id} className="photo-tile pending">
-                  <img src={r.photoUrl} alt="Waiting for review" />
+                  <img src={r.photoUrl} alt="Waiting for review" loading="lazy" decoding="async" />
                   <button type="button" className="photo-remove" onClick={() => withdraw(r.id)} aria-label="Withdraw this photo">✕</button>
                 </figure>
               ))}
@@ -422,7 +423,7 @@ function ProfileTab({ refresh }) {
           <div className="photo-grid">
             {data.media.filter((m) => m.kind === 'photo').map((m) => (
               <figure key={m.id} className="photo-tile">
-                <img src={m.url} alt={m.altText || ''} />
+                <img src={m.url} alt={m.altText || ''} loading="lazy" decoding="async" />
                 {(m.isPrimary || m.vipOnly) && <figcaption>{m.isPrimary ? 'Main photo' : 'VIP only'}</figcaption>}
               </figure>
             ))}
@@ -435,7 +436,7 @@ function ProfileTab({ refresh }) {
           <h2>Recent decisions</h2>
           {history.map((r) => (
             <div key={r.id} className="list-item">
-              {r.kind === 'photo' && r.photoUrl && r.status === 'Approved' ? <img src={r.photoUrl} alt="" className="history-thumb" /> : <span className="history-thumb icon">{r.kind === 'photo' ? '▣' : '¶'}</span>}
+              {r.kind === 'photo' && r.photoUrl && r.status === 'Approved' ? <img src={r.photoUrl} alt="" className="history-thumb" loading="lazy" decoding="async" /> : <span className="history-thumb icon">{r.kind === 'photo' ? '▣' : '¶'}</span>}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <strong>{r.kind === 'photo' ? 'New photo' : `Profile update: ${Object.keys(r.data || {}).map((k) => FIELD_LABELS[k] || k).join(', ')}`}</strong>
                 <div className="muted" style={{ fontSize: '0.84rem' }}>{dateTime(r.decidedAt)}{r.staffNote ? ` · “${r.staffNote}”` : ''}</div>
@@ -587,7 +588,7 @@ const CompanionSecurity = () => <Security base={BASE} />;
 export default function Companion() {
   const { tab = '', ref } = useParams();
   const navigate = useNavigate();
-  const { toast } = useSite();
+  const { toast, idle } = useSite();
   const [me, setMe] = useState(undefined);
   const [alerts, setAlerts] = useState([]);
   const openRef = tab === 'messages' ? ref : null;
@@ -615,11 +616,14 @@ export default function Companion() {
   const refresh = useCallback(() => api('GET', `${BASE}/session`).then((r) => setMe(r.user)).catch(() => setMe(null)), []);
   useEffect(() => { refresh(); }, [refresh]);
   const signedIn = (u, message) => {
+    markActive();
     setMe(u);
     toast(message || (u.backupCodesLeft != null ? `Signed in with a backup code — ${u.backupCodesLeft} left` : `Welcome back, ${u.name}`));
     navigate(BASE, { replace: true });
   };
-  const logout = async () => { await api('POST', `${BASE}/logout`); setMe(null); navigate(BASE); toast('Signed out'); };
+  const signOut = async (message) => { await api('POST', `${BASE}/logout`).catch(() => {}); setMe(null); navigate(BASE); toast(message); };
+  const logout = () => signOut('Signed out');
+  const idleLeft = useIdleTimeout(me ? idle?.companionMinutes : 0, () => signOut('You were signed out after a period of inactivity'));
 
   if (me === undefined) return <Loading />;
   if (tab === 'invite' || tab === 'reset-password') {
@@ -651,6 +655,7 @@ export default function Companion() {
       <div><View me={me} refresh={refresh} inbox={inbox} reloadInbox={reloadInbox} /></div>
       <MessageAlerts alerts={alerts} onDismiss={(key) => setAlerts((cur) => cur.filter((a) => a.key !== key))}
         onOpen={(a) => { setAlerts((cur) => cur.filter((x) => x.key !== a.key)); navigate(`${BASE}/messages/${a.reference}`); }} />
+      <IdleWarning seconds={idleLeft} onSignOut={logout} />
     </div>
   );
 }

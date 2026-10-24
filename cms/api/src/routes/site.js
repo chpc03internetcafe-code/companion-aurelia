@@ -15,13 +15,14 @@ import { bookingReceived, bookingToDesk, inquiryReceipt, inquiryToDesk, siteUrl 
 import { themeVars } from '../lib/themes.js';
 import { newReference } from '../lib/refs.js';
 import { bookingCancelledNote, bookingNote, bookingRescheduledNote, inquiryNote, notifyStaff } from '../lib/notifications.js';
-import { bookingRules, loadSettings } from '../services/settings.js';
+import { bookingRules, idleMinutes, loadSettings } from '../services/settings.js';
 import { dayAvailability, hoursUntil, openDays } from '../services/availability.js';
 import { CONTACT_METHODS, addEvent, createBooking, loadBooking, loadEvents, moveBooking, publicBooking, quote } from '../services/bookings.js';
 import { cardsByIds, profileDetail, searchProfiles, similarProfiles, SORTS } from '../services/profiles.js';
 import { INQUIRY_SUBJECTS } from './inquiries.js';
 import { emailCompanion } from '../services/companions.js';
 import { chatState, messageCounts, readChat, sendChat } from '../services/chat.js';
+import { cached, PUBLIC_CDN_CACHE } from '../lib/cache.js';
 
 const router = Router();
 const visitor = (name, email) => ({ actorType: 'Visitor', userName: name, userEmail: email });
@@ -32,7 +33,13 @@ const PUBLIC_SETTINGS = ['siteName', 'logoText', 'logoSubtext', 'tagline', 'abou
   'telegramUrl', 'whatsappUrl', 'announcement1', 'announcement2', 'announcement3', 'heroTitle', 'heroText', 'currency', 'ageGateEnabled', 'ageGateText',
   'bookingPolicy', 'memberPaymentInstructions', 'seoTitleSuffix', 'seoDefaultDescription', 'seoOgImage', 'structuredData', 'searchIndexing'];
 
+// Same for every visitor, so it's cached on the server and briefly at the CDN.
 router.get('/bootstrap', wrap(async (_req, res) => {
+  res.set('Cache-Control', PUBLIC_CDN_CACHE);
+  res.json(await cached(`bootstrap:${phDate()}`, 60_000, bootstrap));
+}));
+
+async function bootstrap() {
   const s = await loadSettings();
   const rules = await bookingRules(s);
   const [categories, locations, tiers, pages, faqs, stats, durations] = await Promise.all([
@@ -50,21 +57,27 @@ router.get('/bootstrap', wrap(async (_req, res) => {
     one(`SELECT COUNT(*)::int AS profiles, COUNT(*) FILTER (WHERE is_verified)::int AS verified FROM profiles WHERE status = 'Published' AND vip_tier_id IS NULL`),
     q(`SELECT DISTINCT r.duration_minutes FROM profile_rates r JOIN profiles p ON p.id = r.profile_id WHERE r.is_active AND p.status = 'Published' ORDER BY 1`),
   ]);
-  res.set('Cache-Control', 'no-cache');
-  res.json({
+  return {
     site: Object.fromEntries(PUBLIC_SETTINGS.map((k) => [k, s[k] || ''])),
     rules: { leadHours: rules.leadHours, windowDays: rules.windowDays, cancelCutoffHours: rules.cancelCutoffHours, rescheduleLimit: rules.rescheduleLimit, membersOnly: rules.membersOnly, autoConfirm: rules.autoConfirm },
     theme: { id: s.theme, vars: themeVars(s.theme) },
+    idle: { memberMinutes: idleMinutes(s).member, companionMinutes: idleMinutes(s).companion },
     today: phDate(),
     categories, locations, pages, faqs, stats,
     tiers: tiers.map((t) => ({ ...t, perks: JSON.parse(t.perks || '[]') })),
     durations: durations.map((d) => d.durationMinutes),
     sorts: SORTS, contactMethods: CONTACT_METHODS, inquirySubjects: INQUIRY_SUBJECTS,
-  });
-}));
+  };
+}
 
+// Cached per VIP rank (what a visitor may see depends only on it).
 router.get('/home', wrap(async (req, res) => {
   const rank = await rankOf(req);
+  res.set('Cache-Control', 'no-store');
+  res.json(await cached(`home:${rank}`, 30_000, () => homeLists(rank)));
+}));
+
+async function homeLists(rank) {
   const [featured, recent, availableToday, posts] = await Promise.all([
     searchProfiles({ featured: '1' }, { memberRank: rank, pageSize: 8 }),
     searchProfiles({ sort: 'updated' }, { memberRank: rank, pageSize: 8 }),
@@ -72,9 +85,8 @@ router.get('/home', wrap(async (req, res) => {
     q(`SELECT slug, kind, title, excerpt, cover_url, cover_alt, audience, published_at FROM posts
        WHERE is_published AND audience = 'Public' ORDER BY is_pinned DESC, published_at DESC NULLS LAST LIMIT 3`),
   ]);
-  res.set('Cache-Control', 'no-store');
-  res.json({ featured: featured.items, recent: recent.items, availableTodayCount: availableToday.total, posts });
-}));
+  return { featured: featured.items, recent: recent.items, availableTodayCount: availableToday.total, posts };
+}
 
 // ---------- Directory ----------
 const FILTER_KEYS = ['category', 'location', 'q', 'budgetMin', 'budgetMax', 'duration', 'available', 'verified', 'featured', 'vip', 'sort'];
@@ -184,7 +196,7 @@ router.post('/bookings', wrap(async (req, res) => {
   } else if ((data.notes || '').length < 10) {
     throw new HttpError(422, 'Tell us a little about your inquiry.', { notes: 'Please tell us a little more.' });
   }
-  rateLimit(`book:${clientIp(req)}`, 6, 3600000);
+  await rateLimit(`book:${clientIp(req)}`, 6, 3600000);
   const rules = await bookingRules();
   const member = await sessionMember(req);
   if (rules.membersOnly && !member) throw new HttpError(401, 'Please sign in to your member account to send a booking request.', { code: 'members_only' });
@@ -219,12 +231,18 @@ router.post('/bookings', wrap(async (req, res) => {
 }));
 
 // Booking lookup: signed-in member who made it, or reference + matching email.
+// Reference + email unlock a guest booking. Guessing is limited per IP, checked before the lookup so a
+// correct guess after the limit is refused too. The email comes in the body (POST) or the X-Booking-Email
+// header (GET), never the URL, so it doesn't end up in server or CDN logs.
+const bookingEmail = (req) => req.get('x-booking-email') || '';
+
 async function ownedBooking(req, email) {
+  const limiter = await throttle(`lookup:${clientIp(req)}`, { max: 20 });
   const b = await loadBooking({ one }, 'b.reference', String(req.params.ref || '').trim().toUpperCase().slice(0, 24));
   const me = await sessionMember(req);
   const okEmail = email && b && b.clientEmail.toLowerCase() === String(email).trim().toLowerCase();
   if (!b || !(okEmail || (me && me.id === b.memberId))) {
-    throttle(`lookup:${clientIp(req)}`, { max: 20 }).fail();
+    await limiter.fail();
     throw new HttpError(404, 'We couldn’t find a booking with that reference and email.');
   }
   return b;
@@ -248,7 +266,7 @@ async function bookingResponse(b) {
 
 router.get('/bookings/:ref', wrap(async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json(await bookingResponse(await ownedBooking(req, req.query.email)));
+  res.json(await bookingResponse(await ownedBooking(req, bookingEmail(req))));
 }));
 
 router.post('/bookings/:ref/cancel', wrap(async (req, res) => {
@@ -294,7 +312,7 @@ router.post('/bookings/:ref/reschedule', wrap(async (req, res) => {
 // Chat with the companion (confirmed bookings). `after` = last message id the page already has.
 router.get('/bookings/:ref/messages', wrap(async (req, res) => {
   res.set('Cache-Control', 'no-store');
-  res.json(await readChat(await ownedBooking(req, req.query.email), 'Client', req.query.after));
+  res.json(await readChat(await ownedBooking(req, bookingEmail(req)), 'Client', req.query.after));
 }));
 
 router.post('/bookings/:ref/messages', wrap(async (req, res) => {
@@ -315,34 +333,41 @@ router.get('/locations/:slug', wrap(async (req, res) => {
     q('SELECT id, name, slug FROM locations WHERE parent_id = $1 AND is_published ORDER BY sort_order, name', [l.id]),
     q("SELECT slug, kind, title, excerpt, cover_url, cover_alt, published_at FROM posts WHERE is_published AND audience = 'Public' AND location_id = $1 ORDER BY published_at DESC LIMIT 3", [l.id]),
   ]);
+  res.set('Cache-Control', PUBLIC_CDN_CACHE);
   res.json({ ...parseSections(l), areas, posts });
 }));
 
 router.get('/categories/:slug', wrap(async (req, res) => {
   const c = await one('SELECT id, name, slug, description, intro, seo_title, meta_description FROM categories WHERE slug = $1 AND is_active', [req.params.slug]);
   if (!c) throw new HttpError(404, 'Category not found.');
+  res.set('Cache-Control', PUBLIC_CDN_CACHE);
   res.json(c);
 }));
 
 router.get('/pages/:slug', wrap(async (req, res) => {
   const p = await one('SELECT slug, title, kicker, intro, sections, seo_title, meta_description, updated_at FROM content_pages WHERE slug = $1 AND is_published', [req.params.slug]);
   if (!p) throw new HttpError(404, 'Page not found.');
+  res.set('Cache-Control', PUBLIC_CDN_CACHE);
   res.json(parseSections(p));
 }));
 
 // Guides, announcements and news. Members-only posts are listed with a lock for everyone else; their body is never sent.
+// ?page=1&pageSize=12 → { items, total, page, pageSize }
 router.get('/posts', wrap(async (req, res) => {
+  const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+  const pageSize = Math.min(48, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 12));
   const rank = await rankOf(req);
   const p = params([rank]);
   const where = ['ps.is_published'];
   if (['Guide', 'Announcement', 'News'].includes(req.query.kind)) where.push(`ps.kind = ${p.add(req.query.kind)}`);
   if (req.query.audience === 'Members') where.push("ps.audience = 'Members'");
-  const rows = await q(`SELECT ps.slug, ps.kind, ps.title, ps.excerpt, ps.cover_url, ps.cover_alt, ps.audience, ps.is_pinned, ps.published_at, t.name AS tier_name, l.name AS location_name,
+  const rows = await q(`SELECT COUNT(*) OVER ()::int AS total_count, ps.slug, ps.kind, ps.title, ps.excerpt, ps.cover_url, ps.cover_alt, ps.audience, ps.is_pinned, ps.published_at, t.name AS tier_name, l.name AS location_name,
       NOT (ps.audience = 'Public' OR ($1 > 0 AND (t.id IS NULL OR t.rank <= $1))) AS locked
     FROM posts ps LEFT JOIN tiers t ON t.id = ps.min_tier_id LEFT JOIN locations l ON l.id = ps.location_id
-    WHERE ${where.join(' AND ')} ORDER BY ps.is_pinned DESC, ps.published_at DESC NULLS LAST LIMIT 60`, p.values);
+    WHERE ${where.join(' AND ')} ORDER BY ps.is_pinned DESC, ps.published_at DESC NULLS LAST
+    LIMIT ${p.add(pageSize)} OFFSET ${p.add((page - 1) * pageSize)}`, p.values);
   res.set('Cache-Control', 'no-store');
-  res.json(rows);
+  res.json({ items: rows.map(({ totalCount, ...r }) => r), total: rows[0]?.totalCount ?? 0, page, pageSize });
 }));
 
 router.get('/posts/:slug', wrap(async (req, res) => {
@@ -373,6 +398,11 @@ const xmlEsc = (s) => String(s).replace(/[<>&'"]/g, (c) => ({ '<': '&lt;', '>': 
 
 router.get('/sitemap.xml', wrap(async (req, res) => {
   const base = siteUrl() || `${req.protocol}://${req.get('host')}`;
+  res.type('application/xml').set('Cache-Control', 'public, max-age=3600');
+  res.send(await cached(`sitemap:${base}`, 5 * 60_000, () => sitemapXml(base)));
+}));
+
+async function sitemapXml(base) {
   const [cats, locs, profiles, posts, pages] = await Promise.all([
     q('SELECT slug, updated_at FROM categories WHERE is_active'),
     q('SELECT slug, updated_at FROM locations WHERE is_published'),
@@ -388,10 +418,9 @@ router.get('/sitemap.xml', wrap(async (req, res) => {
     ...posts.map((p) => [`/guides/${p.slug}`, p.updatedAt, '0.5']),
     ...pages.map((p) => [`/pages/${p.slug}`, p.updatedAt, '0.3']),
   ];
-  res.type('application/xml').set('Cache-Control', 'public, max-age=3600');
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(([u, d, pr]) =>
-    `  <url><loc>${xmlEsc(base + u)}</loc>${d ? `<lastmod>${new Date(d).toISOString().slice(0, 10)}</lastmod>` : ''}<priority>${pr}</priority></url>`).join('\n')}\n</urlset>\n`);
-}));
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map(([u, d, pr]) =>
+    `  <url><loc>${xmlEsc(base + u)}</loc>${d ? `<lastmod>${new Date(d).toISOString().slice(0, 10)}</lastmod>` : ''}<priority>${pr}</priority></url>`).join('\n')}\n</urlset>\n`;
+}
 
 router.get('/robots.txt', wrap(async (req, res) => {
   const s = await loadSettings();
@@ -414,7 +443,7 @@ const inquirySchema = {
 router.post('/inquiries', wrap(async (req, res) => {
   const data = validate(req.body, inquirySchema);
   if (req.body.website) return res.status(201).json({ reference: 'MSG-OK' }); // honeypot
-  rateLimit(`inquiry:${clientIp(req)}`, 5, 3600000);
+  await rateLimit(`inquiry:${clientIp(req)}`, 5, 3600000);
   const member = await sessionMember(req);
   const created = await tx(async (db) => {
     const reference = await newReference(db, 'MSG', 'inquiries', 'reference');

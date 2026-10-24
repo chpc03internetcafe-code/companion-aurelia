@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, store } from '../utils/api';
 import { applyTheme } from '../utils/theme';
 import { setCurrency } from '../utils/format';
+import { IdleWarning, markActive, useIdleTimeout } from '../components/IdleTimeout';
 
 const SiteContext = createContext(null);
 const REFRESH_AFTER_MS = 60_000;
@@ -74,16 +75,20 @@ export function SiteProvider({ children }) {
   useEffect(() => { refreshMember(); }, [refreshMember]);
 
   const signedIn = useCallback(async (user, message) => {
+    markActive();
     setMember(user);
     await syncFavorites().catch(() => {});
     if (message) toast(message);
   }, [syncFavorites, toast]);
-  const logout = async () => {
+  const signOut = async (message) => {
     await api('POST', '/account/logout').catch(() => {});
     setMember(null);
     setMemberFavs([]);
-    toast('You have been signed out');
+    toast(message);
   };
+  const logout = () => signOut('You have been signed out');
+  const idleSignOut = () => signOut('You were signed out after a period of inactivity');
+  const idleLeft = useIdleTimeout(member ? data?.idle?.memberMinutes : 0, idleSignOut);
 
   // ----- favourites -----
   const favorites = member ? memberFavs : localFavs;
@@ -135,7 +140,12 @@ export function SiteProvider({ children }) {
       </div>
     );
   }
-  return <SiteContext.Provider value={value}>{children}</SiteContext.Provider>;
+  return (
+    <SiteContext.Provider value={value}>
+      {children}
+      <IdleWarning seconds={idleLeft} onSignOut={logout} />
+    </SiteContext.Provider>
+  );
 }
 
 export const useSite = () => useContext(SiteContext);

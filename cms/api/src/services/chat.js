@@ -59,7 +59,7 @@ export async function sendChat(b, sender, text, authorName = null) {
   if (!state) throw new HttpError(404, 'This request has no chat.');
   // staff can still add a note to a closed thread; the client and companion can't
   if (!state.open && sender !== 'Concierge') throw new HttpError(409, state.note);
-  rateLimit(`chat:${sender}:${b.id}`, 30, 10 * 60000);
+  await rateLimit(`chat:${sender}:${b.id}`, 30, 10 * 60000);
 
   const m = await one('INSERT INTO booking_messages (booking_id, sender, author, body) VALUES ($1, $2, $3, $4) RETURNING id',
     [b.id, sender, authorName ? String(authorName).slice(0, 150) : null, body]);

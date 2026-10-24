@@ -23,7 +23,7 @@ export default function Footer() {
             {site.hours && <p className="muted" style={{ marginTop: 14, fontSize: '0.84rem' }}>{site.hours}</p>}
           </div>
           <div>
-            <h4>Companions</h4>
+            <h2>Companions</h2>
             <ul>
               <li><Link to="/companions">All companions</Link></li>
               {categories.map((c) => <li key={c.id}><Link to={`/${c.slug}`}>{c.name}</Link></li>)}
@@ -32,14 +32,14 @@ export default function Footer() {
             </ul>
           </div>
           <div>
-            <h4>Locations</h4>
+            <h2>Locations</h2>
             <ul>
               {cities.slice(0, 7).map((l) => <li key={l.id}><Link to={`/locations/${l.slug}`}>{l.name}</Link></li>)}
               <li><Link to="/locations">All locations</Link></li>
             </ul>
           </div>
           <div>
-            <h4>Clients</h4>
+            <h2>Clients</h2>
             <ul>
               <li><Link to="/booking-status">Check or change a booking</Link></li>
               <li><Link to="/vip">VIP membership</Link></li>

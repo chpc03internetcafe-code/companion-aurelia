@@ -1,6 +1,7 @@
 // CMS: companion portal access per profile (invite, suspend, reset two-step, remove) and the review queue for
 // profile updates companions send from the portal (new wording or photos go live only once approved here).
 import { Router } from 'express';
+import { devLinksAllowed } from '../lib/security.js';
 import { one, q, run, tx } from '../db/index.js';
 import { HttpError, idParam, wrap } from '../lib/http.js';
 import { validate } from '../lib/validate.js';
@@ -15,7 +16,8 @@ import { createCompanionToken } from './companion.js';
 
 const router = Router();
 const realm = REALMS.companion;
-const devMode = () => !process.env.VERCEL && process.env.NODE_ENV !== 'production';
+// email links are shown on screen only on a developer's machine (see lib/security.js)
+const devMode = devLinksAllowed;
 
 const ACCOUNT = `SELECT ca.id, ca.profile_id, ca.email, ca.status, ca.invited_by, ca.invited_at, ca.activated_at, ca.last_login_at, ca.totp_enabled_at AS two_step_since,
     p.display_name, (SELECT COUNT(*)::int FROM companion_sessions s WHERE s.account_id = ca.id AND s.expires_at > now()) AS devices

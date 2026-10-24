@@ -3,11 +3,13 @@
 // Sign-up only records a pending account and emails a confirmation link; the account is created when the
 // link is opened, so nobody can claim an email they don't own. Members must be 18 or over.
 import { Router } from 'express';
+import { devLinksAllowed } from '../lib/security.js';
+import { emailDeliveryProblem } from '../lib/email-check.js';
 import { one, q, run, tx } from '../db/index.js';
 import { validate } from '../lib/validate.js';
 import {
   consumeToken, createMfaChallenge, createToken, endSession, hashPassword, passwordProblem, pendingSignups, REALMS, requireMember, revokeMemberSessions,
-  sessionMember, startSession, throttle, verifyPassword,
+  sessionMember, startSession, throttle, checkPassword, loginLimiter, upgradeHash,
 } from '../lib/auth.js';
 import { passSecondStep, securityRoutes } from '../lib/account-security.js';
 import { clientIp, HttpError, idParam, wrap } from '../lib/http.js';
@@ -24,7 +26,8 @@ import { createMembership, expireOld, MEMBER_PAYMENT_METHODS, requestKind, SELEC
 import { phDate } from '../lib/dates.js';
 
 const router = Router();
-const devMode = () => !process.env.VERCEL && process.env.NODE_ENV !== 'production';
+// email links are shown on screen only on a developer's machine (see lib/security.js)
+const devMode = devLinksAllowed;
 const site = () => siteUrl() || 'http://localhost:5173';
 const actor = (m) => ({ actorType: 'Member', userName: m.fullName, userEmail: m.email });
 
@@ -76,17 +79,19 @@ async function sendVerification(email, pending) {
 }
 
 router.post('/register', wrap(async (req, res) => {
-  const limiter = throttle(`reg:${clientIp(req)}`, { max: 10 });
-  const pwErr = passwordProblem(req.body.password);
+  const limiter = await throttle(`reg:${clientIp(req)}`, { max: 10 });
+  const pwErr = passwordProblem(req.body.password, req.body.email);
   const data = validate(req.body, { ...registerSchema, ...(pwErr ? { password: { type: 'string', check: () => pwErr } } : {}) });
   if (!req.body.terms) throw new HttpError(422, 'Please confirm you are 18+ and accept the terms.', { terms: 'Required.' });
+  const undeliverable = await emailDeliveryProblem(data.email);
+  if (undeliverable) throw new HttpError(422, undeliverable, { email: undeliverable });
   const existing = await one('SELECT id, email_verified_at, status FROM members WHERE lower(email) = lower($1)', [data.email]);
   if (existing?.emailVerifiedAt) {
-    limiter.fail();
+    await limiter.fail();
     throw new HttpError(409, 'An account with this email already exists. Please sign in instead.', { email: 'Already registered — sign in instead.' });
   }
   if (existing?.status === 'Suspended') throw new HttpError(403, 'This email can’t be used to register. Please contact us.');
-  limiter.fail(); // every sign-up sends an email, so count them all
+  await limiter.fail(); // every sign-up sends an email, so count them all
   const pending = { ...data, passwordHash: await hashPassword(req.body.password) };
   const r = await sendVerification(data.email, pending);
   await logEvent({ ...actor({ fullName: `${data.firstName} ${data.lastName}`, email: data.email }), action: 'Signed up', module: 'members', entityType: 'Member',
@@ -97,7 +102,7 @@ router.post('/register', wrap(async (req, res) => {
 // Always answers the same way, so it can't reveal which emails have signed up.
 router.post('/verify-email/resend', wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
-  throttle(`resend:${clientIp(req)}`, { max: 5 }).fail();
+  await (await throttle(`resend:${clientIp(req)}`, { max: 5 })).fail();
   const [pending] = email ? await pendingSignups(email) : [];
   const active = await one('SELECT 1 AS x FROM members WHERE lower(email) = $1 AND email_verified_at IS NOT NULL', [email]);
   let devLink;
@@ -140,8 +145,8 @@ router.post('/verify-email', wrap(async (req, res) => {
 router.post('/forgot-password', wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(422, 'Enter a valid email address.', { email: 'Enter a valid email address.' });
-  throttle(`forgot:${clientIp(req)}`, { max: 5, windowMs: 3600000 }).fail();
-  throttle(`forgot:${email}`, { max: 3, windowMs: 3600000 }).fail();
+  await (await throttle(`forgot:${clientIp(req)}`, { max: 5, windowMs: 3600000 })).fail();
+  await (await throttle(`forgot:${email}`, { max: 3, windowMs: 3600000 })).fail();
   const m = await one("SELECT id, full_name, email FROM members WHERE lower(email) = $1 AND status = 'Active' AND password_hash IS NOT NULL", [email]);
   let devLink;
   if (m) {
@@ -174,17 +179,18 @@ router.post('/reset-password', wrap(async (req, res) => {
 // ---------- Sign-in ----------
 router.post('/login', wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
-  const limiter = throttle(`login:${clientIp(req)}:${email}`, { max: 8 });
+  const limiter = await loginLimiter('login', req, email);
   const m = await one('SELECT * FROM members WHERE lower(email) = $1', [email]);
-  const ok = m?.passwordHash && (await verifyPassword(String(req.body.password || ''), m.passwordHash));
+  const ok = await checkPassword(req.body.password, m?.passwordHash);
   if (!ok) {
-    limiter.fail();
+    await limiter.fail();
     const pending = !m && email ? (await pendingSignups(email)).length > 0 : false;
     throw new HttpError(401, pending ? 'Please confirm your email first — check your inbox for our link.' : 'Incorrect email or password.', { password: 'Incorrect email or password.', code: pending ? 'unverified' : undefined });
   }
   if (!m.emailVerifiedAt) throw new HttpError(401, 'Please confirm your email first — check your inbox for our link.', { code: 'unverified' });
   if (m.status !== 'Active') throw new HttpError(403, 'This account is suspended. Please contact us.');
-  limiter.clear();
+  await limiter.clear();
+  await upgradeHash('members', m.id, req.body.password, m.passwordHash);
   const remember = req.body.remember !== false;
   if (m.totpEnabledAt) return res.json({ mfaRequired: true, mfaToken: await createMfaChallenge(m.id, remember) });
   await startSession(req, res, m.id, remember);
@@ -298,7 +304,7 @@ router.post('/me/membership', wrap(async (req, res) => {
     paymentReference: { type: 'string', required: true, max: 80, label: 'Payment reference' },
     note: { type: 'string', max: 500 },
   });
-  throttle(`ms:${req.member.id}`, { max: 5, windowMs: 3600000 }).fail();
+  await (await throttle(`ms:${req.member.id}`, { max: 5, windowMs: 3600000 })).fail();
   const tier = await one('SELECT * FROM tiers WHERE id = $1 AND is_active AND is_public', [data.tierId]);
   if (!tier) throw new HttpError(422, 'Choose one of the available tiers.', { tierId: 'Choose a tier.' });
   if (await one("SELECT 1 AS x FROM memberships WHERE member_id = $1 AND status = 'Pending'", [req.member.id])) {

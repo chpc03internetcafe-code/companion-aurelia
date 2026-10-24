@@ -71,7 +71,8 @@ export default function BookingStatus() {
     setBusy(true);
     setError('');
     try {
-      const r = await api('GET', `/site/bookings/${encodeURIComponent(reference.trim().toUpperCase())}${qs({ email })}`);
+      // the email goes in a header, not the URL, so it isn't written to server logs
+      const r = await api('GET', `/site/bookings/${encodeURIComponent(reference.trim().toUpperCase())}`, null, { headers: { 'X-Booking-Email': email } });
       setB(r);
       lookupEmail.set(r.reference, email);
       if (r.reference !== ref) navigate(`/booking-status/${r.reference}`, { replace: true });

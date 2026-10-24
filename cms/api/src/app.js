@@ -2,6 +2,7 @@
 import './env.js';
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
 import multer from 'multer';
 import { dbKind, q } from './db/index.js';
 import { HttpError, wrap } from './lib/http.js';
@@ -9,7 +10,9 @@ import { requireAdmin, requirePermission } from './lib/admin-auth.js';
 import { auditWrites } from './lib/audit.js';
 import { UPLOAD_DIR } from './lib/storage.js';
 import { mailConfigured } from './lib/mailer.js';
-import { loadSettings } from './services/settings.js';
+import { cached, clearCacheOnWrite } from './lib/cache.js';
+import { blockCrossSite, checkProductionConfig, corsOptions, isProduction, loggableError, requestLimit, safeJsonReviver, securityHeaders, trustProxySetting } from './lib/security.js';
+import { idleMinutes, loadSettings } from './services/settings.js';
 import { BOOKING_SOURCES, BOOKING_STATUSES, CONTACT_METHODS, INQUIRY_STATUSES as PROFILE_INQUIRY_STATUSES } from './services/bookings.js';
 import { MEMBER_PAYMENT_METHODS, MEMBERSHIP_KINDS, MEMBERSHIP_STATUSES } from './services/members.js';
 import { SORTS } from './services/profiles.js';
@@ -32,22 +35,39 @@ import companionRoutes from './routes/companion.js';
 import companionAdminRoutes from './routes/companions.js';
 
 const app = express();
-app.set('trust proxy', true);
-app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') || true, credentials: true }));
-app.use(express.json({ limit: '1mb' }));
-app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '7d' }));
+checkProductionConfig();
+app.disable('x-powered-by');
+app.set('trust proxy', trustProxySetting());
+app.use(securityHeaders);
+app.use(cors(corsOptions));
+app.use(requestLimit);
+// gzip / brotli for JSON, XML and text over 1 KB. The live-notification long poll is left alone so it answers immediately.
+app.use(compression({ threshold: 1024, filter: (req, res) => req.path !== '/api/notifications/wait' && compression.filter(req, res) }));
+app.use(express.json({
+  limit: '1mb',
+  reviver: safeJsonReviver,
+  // webhook signatures are computed over the exact bytes received, so keep them for those routes
+  verify: (req, _res, buf) => { if (req.originalUrl.startsWith('/api/webhooks/')) req.rawBody = buf; },
+}));
+app.use('/api', blockCrossSite);
+app.use(clearCacheOnWrite);
+// Upload file names are unique and never reused, so browsers and the CDN can keep them for a year.
+app.use('/uploads', express.static(UPLOAD_DIR, { maxAge: '365d', immutable: true }));
 
 app.get('/api/health', async (_req, res) => {
   try {
     await q('SELECT 1');
     res.json({ ok: true, database: await dbKind(), email: mailConfigured() });
   } catch (err) {
-    res.status(503).json({ ok: false, error: err.message });
+    console.error('[health]', loggableError(err));
+    res.status(503).json({ ok: false, error: isProduction() ? 'Database unavailable.' : err.message });
   }
 });
 
 // Shared option lists for the CMS forms.
-app.get('/api/meta', requireAdmin, wrap(async (_req, res) => {
+app.get('/api/meta', requireAdmin, wrap(async (_req, res) => res.json(await cached('meta', 60_000, meta))));
+
+async function meta() {
   const [categories, locations, tiers, s] = await Promise.all([
     q('SELECT id, name, slug, is_active FROM categories ORDER BY sort_order, name'),
     q(`SELECT l.id, l.name, l.slug, l.parent_id, l.is_published, pl.name AS parent_name FROM locations l LEFT JOIN locations pl ON pl.id = l.parent_id
@@ -55,15 +75,15 @@ app.get('/api/meta', requireAdmin, wrap(async (_req, res) => {
     q('SELECT id, name, rank, price, duration_days, color, is_active FROM tiers ORDER BY rank, sort_order'),
     loadSettings(),
   ]);
-  res.json({
-    site: { siteName: s.siteName, logoText: s.logoText, currency: s.currency || 'PHP', slotMinutes: Number(s.slotMinutes) || 30 },
+  return {
+    site: { siteName: s.siteName, logoText: s.logoText, currency: s.currency || 'PHP', slotMinutes: Number(s.slotMinutes) || 30, idleMinutes: idleMinutes(s).staff },
     categories, locations, tiers,
     bookingStatuses: BOOKING_STATUSES, profileInquiryStatuses: PROFILE_INQUIRY_STATUSES, bookingSources: BOOKING_SOURCES, contactMethods: CONTACT_METHODS,
     profileStatuses: PROFILE_STATUSES, membershipStatuses: MEMBERSHIP_STATUSES, membershipKinds: MEMBERSHIP_KINDS, paymentMethods: MEMBER_PAYMENT_METHODS,
     inquiryStatuses: INQUIRY_STATUSES, inquirySubjects: INQUIRY_SUBJECTS, sectionTypes: SECTION_TYPES, sorts: SORTS,
     websiteUrl: process.env.SITE_URL || 'http://localhost:5173',
-  });
-}));
+  };
+}
 
 // Public: website and member portal
 app.use('/api/site', siteRoutes);
@@ -94,7 +114,7 @@ const UNIQUE_TABLES = ['profile_change_requests', 'companion_accounts', 'compani
   'collections', 'categories', 'locations', 'redirects', 'inquiries', 'profiles', 'bookings', 'members', 'tiers', 'posts'];
 const FIELD_LABELS = { email: 'email', slug: 'URL slug', name: 'name', from_path: '“From” path', reference: 'reference', member_no: 'member number', membership_no: 'membership number' };
 // eslint-disable-next-line no-unused-vars
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'Each image must be 4 MB or smaller.' : err.code === 'LIMIT_FILE_COUNT' ? 'Too many files at once.' : err.message });
   }
@@ -114,8 +134,9 @@ app.use((err, _req, res, _next) => {
   if (err.code === '23514') return res.status(422).json({ error: 'Some values are out of range. Please check the form.' });
   if (err.code === '22P02' || err.code === '22007' || err.code === '22008') return res.status(400).json({ error: 'Some values are in the wrong format.' });
   const status = err.status || 500;
-  if (status >= 500) console.error(err);
-  res.status(status).json({ error: status >= 500 ? 'Server error. Check the API logs.' : err.message, details: err.details });
+  if (status >= 500) console.error(`[api] ${req.method} ${req.path}`, loggableError(err));
+  // never send internal error text (SQL, stack traces, file paths) to the browser
+  res.status(status).json({ error: status >= 500 ? (isProduction() ? 'Something went wrong. Please try again.' : 'Server error. Check the API logs.') : err.message, details: err.details });
 });
 
 export default app;

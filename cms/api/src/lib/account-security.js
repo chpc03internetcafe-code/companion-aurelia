@@ -22,10 +22,10 @@ import { loadSettings } from '../services/settings.js';
 export async function passSecondStep(req, realm) {
   const c = await findMfaChallenge(req.body.token, realm);
   if (!c) throw new HttpError(410, 'This sign-in has timed out. Please enter your password again.', { code: 'mfa_expired' });
-  const limiter = throttle(`mfa:${realm.accounts}:${c.accountId}`, { max: 10 });
+  const limiter = await throttle(`mfa:${realm.accounts}:${c.accountId}`, { max: 10 });
   const used = await consumeSecondFactor(c.accountId, req.body.code, realm);
   if (!used) {
-    limiter.fail();
+    await limiter.fail();
     await run(`UPDATE ${realm.challenges} SET attempts = attempts + 1 WHERE id = $1`, [c.id]);
     if (c.attempts + 1 >= MAX_MFA_ATTEMPTS) {
       await run(`DELETE FROM ${realm.challenges} WHERE id = $1`, [c.id]);
@@ -34,7 +34,7 @@ export async function passSecondStep(req, realm) {
     throw new HttpError(422, 'That code isn’t right. Check the time on your phone, or use a backup code.', { code: 'That code isn’t right.' });
   }
   await run(`DELETE FROM ${realm.challenges} WHERE id = $1`, [c.id]);
-  limiter.clear();
+  await limiter.clear();
   return { accountId: c.accountId, remember: c.remember, used };
 }
 
@@ -52,21 +52,21 @@ export function securityRoutes(router, realm, { account, log }) {
 
   async function checkPassword(req, field = 'password') {
     const a = account(req);
-    const limiter = throttle(`pw:${T}:${a.id}`, { max: 8 });
+    const limiter = await throttle(`pw:${T}:${a.id}`, { max: 8 });
     const { passwordHash } = await one(`SELECT password_hash FROM ${T} WHERE id = $1`, [a.id]);
     if (!(await verifyPassword(String(req.body[field] || ''), passwordHash))) {
-      limiter.fail();
+      await limiter.fail();
       const msg = field === 'password' ? 'Password is incorrect.' : 'Current password is incorrect.';
       throw new HttpError(422, msg, { [field]: msg });
     }
-    limiter.clear();
+    await limiter.clear();
   }
 
   // ---------- Password ----------
   router.post('/me/password', wrap(async (req, res) => {
     const a = account(req);
     await checkPassword(req, 'currentPassword');
-    const pwErr = passwordProblem(req.body.newPassword);
+    const pwErr = passwordProblem(req.body.newPassword, a.email);
     if (pwErr) throw new HttpError(422, pwErr, { newPassword: pwErr });
     await run(`UPDATE ${T} SET password_hash = $1, updated_at = now() WHERE id = $2`, [await hashPassword(req.body.newPassword), a.id]);
     await revokeMemberSessions(a.id, req, realm);
@@ -112,16 +112,16 @@ export function securityRoutes(router, realm, { account, log }) {
   // Step 2: the first code from the app turns it on and returns the backup codes (shown only this once).
   router.post('/me/2fa/enable', wrap(async (req, res) => {
     const a = account(req);
-    const limiter = throttle(`mfa-setup:${T}:${a.id}`, { max: 10 });
+    const limiter = await throttle(`mfa-setup:${T}:${a.id}`, { max: 10 });
     const m = await one(`SELECT totp_pending_secret, totp_enabled_at FROM ${T} WHERE id = $1`, [a.id]);
     if (m.totpEnabledAt) throw new HttpError(409, 'Two-step sign-in is already on.');
     if (!m.totpPendingSecret) throw new HttpError(409, 'Start the setup again.');
     const step = verifyTotp(m.totpPendingSecret, req.body.code);
     if (step == null) {
-      limiter.fail();
+      await limiter.fail();
       throw new HttpError(422, 'That code isn’t right. Make sure the time on your phone is set automatically.', { code: 'That code isn’t right.' });
     }
-    limiter.clear();
+    await limiter.clear();
     const codes = newBackupCodes();
     await run(`UPDATE ${T} SET totp_secret = totp_pending_secret, totp_pending_secret = NULL, totp_enabled_at = now(), totp_last_step = $1::bigint,
         totp_backup_codes = $2, updated_at = now() WHERE id = $3`, [step, hashBackupCodes(codes), a.id]);
@@ -145,12 +145,12 @@ export function securityRoutes(router, realm, { account, log }) {
   router.post('/me/2fa/disable', wrap(async (req, res) => {
     const a = account(req);
     await checkPassword(req);
-    const limiter = throttle(`mfa:${T}:${a.id}`, { max: 10 });
+    const limiter = await throttle(`mfa:${T}:${a.id}`, { max: 10 });
     if (!(await consumeSecondFactor(a.id, req.body.code, realm))) {
-      limiter.fail();
+      await limiter.fail();
       throw new HttpError(422, 'That code isn’t right.', { code: 'That code isn’t right.' });
     }
-    limiter.clear();
+    await limiter.clear();
     await clearTwoStep(a.id, realm);
     await notify(twoStepChanged(await loadSettings(), { name: a.fullName, email: a.email, enabled: false }));
     await log(req, a, 'Two-step sign-in off', 'turned off two-step sign-in');

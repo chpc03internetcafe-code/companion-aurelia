@@ -8,13 +8,13 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(method, url, body) {
+export async function api(method, url, body, { headers } = {}) {
   let res;
   try {
     res = await fetch(`/api${url}`, {
       method,
       credentials: 'same-origin',
-      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      headers: body || headers ? { ...(body ? { 'Content-Type': 'application/json' } : {}), ...headers } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
@@ -48,16 +48,13 @@ export const store = {
   },
 };
 
-// Remembers the email a guest used for a booking in this tab, so the status page opens directly.
+// Remembers the email a guest used for a booking, so the status page opens directly after booking.
+// Reference + email are what unlock a booking (view, cancel, reschedule), so they're kept in memory only,
+// never in localStorage/sessionStorage: they're gone when the tab reloads or closes. Sign-in sessions are
+// httpOnly cookies that page scripts can't read at all.
+const lookups = new Map();
+try { sessionStorage.removeItem('aurelia-lookup'); } catch { /* storage unavailable */ } // left by older versions
 export const lookupEmail = {
-  get(ref) {
-    try { return JSON.parse(sessionStorage.getItem('aurelia-lookup') || '{}')[ref] || ''; } catch { return ''; }
-  },
-  set(ref, email) {
-    try {
-      const all = JSON.parse(sessionStorage.getItem('aurelia-lookup') || '{}');
-      all[ref] = email;
-      sessionStorage.setItem('aurelia-lookup', JSON.stringify(all));
-    } catch { /* storage unavailable */ }
-  },
+  get: (ref) => lookups.get(ref) || '',
+  set: (ref, email) => { lookups.set(ref, email); },
 };

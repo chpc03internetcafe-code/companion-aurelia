@@ -1,5 +1,6 @@
 // CMS: members (VIP portal accounts) and their memberships.
 import { Router } from 'express';
+import { devLinksAllowed } from '../lib/security.js';
 import { one, params, q, run, tx } from '../db/index.js';
 import { HttpError, idParam, paging, sendCsv, wrap } from '../lib/http.js';
 import { validate } from '../lib/validate.js';
@@ -14,7 +15,8 @@ import { activate, createMembership, expireOld, MEMBER_PAYMENT_METHODS, SELECT_M
 import { parseFees, SELECT_BOOKING } from '../services/bookings.js';
 
 const router = Router();
-const devMode = () => !process.env.VERCEL && process.env.NODE_ENV !== 'production';
+// email links are shown on screen only on a developer's machine (see lib/security.js)
+const devMode = devLinksAllowed;
 
 const LIST = `SELECT m.id, m.member_no, m.full_name, m.first_name, m.last_name, m.email, m.phone, m.status, m.tier_id, m.membership_expires_on, m.email_verified_at,
     m.last_login_at, m.created_at, t.name AS tier_name, t.color AS tier_color,

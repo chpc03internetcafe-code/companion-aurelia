@@ -7,7 +7,7 @@ import { api, qs } from '../utils/api';
 import { breadcrumbLd, useSeo } from '../utils/seo';
 import { duration, money, todayIso, addDays } from '../utils/format';
 import ProfileCard from '../components/ProfileCard';
-import { Empty, Field, Loading, PageHero } from '../components/Common';
+import { CardsSkeleton, Empty, Field, PageHero, useDebounced } from '../components/Common';
 import { IconClose, IconFilter } from '../components/Icons';
 import NotFound from './NotFound';
 
@@ -18,6 +18,9 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
   const [q, setQ] = useState(f.q || '');
   const [budget, setBudget] = useState({ min: f.budgetMin || '', max: f.budgetMax || '' });
   useEffect(() => { setQ(f.q || ''); setBudget({ min: f.budgetMin || '', max: f.budgetMax || '' }); }, [f.q, f.budgetMin, f.budgetMax]);
+  // search as you type, once typing pauses (one request instead of one per keystroke)
+  const typed = useDebounced(q.trim(), 400);
+  useEffect(() => { if (typed !== (f.q || '')) set({ q: typed }); }, [typed]); // eslint-disable-line react-hooks/exhaustive-deps
   const dateValue = f.available && f.available !== 'today' ? f.available : '';
   return (
     <aside className={`filters ${open ? 'open' : ''}`} aria-label="Filters">
@@ -25,12 +28,12 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
         <strong style={{ fontFamily: 'var(--serif)', fontSize: '1.4rem' }}>Filters</strong>
         <button className="icon-btn filter-open" onClick={onClose} aria-label="Close filters"><IconClose size={18} /></button>
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); set({ q }); }}>
-        <Field label="Search"><input type="search" value={q} onChange={(e) => setQ(e.target.value)} onBlur={() => q !== (f.q || '') && set({ q })} placeholder="Name, language, area…" /></Field>
+      <form onSubmit={(e) => { e.preventDefault(); set({ q: q.trim() }); }}>
+        <Field label="Search"><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, language, area…" /></Field>
       </form>
       {!fixed.location && (
         <div>
-          <h4>Location & service area</h4>
+          <h2>Location & service area</h2>
           <select className="input" value={f.location || ''} onChange={(e) => set({ location: e.target.value })} aria-label="Location">
             <option value="">Anywhere</option>
             {cities.map((c) => (
@@ -44,7 +47,7 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
       )}
       {!fixed.category && (
         <div>
-          <h4>Category</h4>
+          <h2>Category</h2>
           <div className="chip-row">
             <button type="button" className={`chip ${!f.category ? 'on' : ''}`} onClick={() => set({ category: '' })}>All</button>
             {categories.map((c) => <button type="button" key={c.id} className={`chip ${f.category === c.slug ? 'on' : ''}`} onClick={() => set({ category: c.slug })}>{c.name}</button>)}
@@ -52,7 +55,7 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
         </div>
       )}
       <div>
-        <h4>Availability</h4>
+        <h2>Availability</h2>
         <div className="chip-row" style={{ marginBottom: 8 }}>
           <button type="button" className={`chip ${!f.available ? 'on' : ''}`} onClick={() => set({ available: '' })}>Any day</button>
           <button type="button" className={`chip ${f.available === 'today' ? 'on' : ''}`} onClick={() => set({ available: 'today' })}>Today</button>
@@ -61,7 +64,7 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
         <input className="input" type="date" min={todayIso()} value={dateValue} onChange={(e) => set({ available: e.target.value })} aria-label="Available on date" />
       </div>
       <div>
-        <h4>Budget per session</h4>
+        <h2>Budget per session</h2>
         <form className="range-row" onSubmit={(e) => { e.preventDefault(); set({ budgetMin: budget.min, budgetMax: budget.max }); }}>
           <input inputMode="numeric" placeholder="Min" value={budget.min} onChange={(e) => setBudget({ ...budget, min: e.target.value.replace(/\D/g, '') })} onBlur={() => set({ budgetMin: budget.min, budgetMax: budget.max })} aria-label="Minimum budget" />
           <span className="muted">–</span>
@@ -76,7 +79,7 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
       </div>
       {durations.length > 0 && (
         <div>
-          <h4>Session length</h4>
+          <h2>Session length</h2>
           <div className="chip-row">
             <button type="button" className={`chip ${!f.duration ? 'on' : ''}`} onClick={() => set({ duration: '' })}>Any</button>
             {durations.map((d) => <button type="button" key={d} className={`chip ${String(f.duration) === String(d) ? 'on' : ''}`} onClick={() => set({ duration: String(d) })}>{duration(d)}</button>)}
@@ -84,7 +87,7 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
         </div>
       )}
       <div>
-        <h4>Profile</h4>
+        <h2>Profile</h2>
         <div className="stack">
           <label className="check"><input type="checkbox" checked={f.verified === '1'} onChange={(e) => set({ verified: e.target.checked ? '1' : '' })} /> Verified only</label>
           <label className="check"><input type="checkbox" checked={f.featured === '1'} onChange={(e) => set({ featured: e.target.checked ? '1' : '' })} /> Featured only</label>
@@ -92,7 +95,7 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
         </div>
       </div>
       <div>
-        <h4>Sort by</h4>
+        <h2>Sort by</h2>
         <select className="input" value={f.sort || 'featured'} onChange={(e) => set({ sort: e.target.value === 'featured' ? '' : e.target.value })} aria-label="Sort by">
           {Object.entries(sorts).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
@@ -159,7 +162,7 @@ export function DirectoryResults({ fixed = {}, heading }) {
           </div>
         )}
         {state.error && <div className="notice error">{state.error}</div>}
-        {state.loading && !d ? <Loading /> : d?.items.length ? (
+        {state.loading && !d ? <CardsSkeleton count={8} /> : d?.items.length ? (
           <div className="grid-cards" style={{ opacity: state.loading ? 0.5 : 1, transition: 'opacity 0.2s' }}>{d.items.map((p) => <ProfileCard key={p.id} p={p} />)}</div>
         ) : !state.loading && <Empty title="No companions match" text="Try another date, a wider budget or a nearby area." action={<button className="btn btn-primary" onClick={() => set(Object.fromEntries(KEYS.map((k) => [k, ''])))}>Clear filters</button>} />}
         {d && pages > 1 && (

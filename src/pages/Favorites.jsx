@@ -4,7 +4,7 @@ import { useSite } from '../context/SiteContext';
 import { api } from '../utils/api';
 import { useSeo } from '../utils/seo';
 import ProfileCard from '../components/ProfileCard';
-import { Empty, Loading, PageHero } from '../components/Common';
+import { CardsSkeleton, Empty, PageHero } from '../components/Common';
 
 export default function Favorites() {
   const { favorites, member } = useSite();
@@ -20,7 +20,7 @@ export default function Favorites() {
       <PageHero compact kicker="Saved" title="Your favourites" text={member ? 'Saved to your account — available on every device.' : 'Saved in this browser. Sign in to keep them on every device.'} />
       <section className="section" style={{ paddingTop: 30 }}>
         <div className="container">
-          {!items ? <Loading /> : items.length ? <div className="grid-cards four">{items.map((p) => <ProfileCard key={p.id} p={p} />)}</div>
+          {!items ? <CardsSkeleton count={4} className="grid-cards four" /> : items.length ? <div className="grid-cards four">{items.map((p) => <ProfileCard key={p.id} p={p} />)}</div>
             : <Empty title="No favourites yet" text="Tap the heart on any profile to save it here." action={<Link to="/companions" className="btn btn-primary">Browse companions</Link>} />}
           {!member && items?.length > 0 && <p className="muted center" style={{ marginTop: 24 }}><Link to="/account">Sign in</Link> to save these to your account.</p>}
         </div>

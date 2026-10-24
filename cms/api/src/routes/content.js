@@ -1,13 +1,12 @@
 // CMS: content pages (About, Terms, Privacy…), posts (guides, announcements, member news) and FAQs.
 import { Router } from 'express';
-import multer from 'multer';
 import { one, q, run } from '../db/index.js';
 import { HttpError, idParam, wrap } from '../lib/http.js';
 import { getRow, insertRow, reorder, slugify, updateRow, validate } from '../lib/validate.js';
-import { removeImages, saveImage } from '../lib/storage.js';
+import { removeImages, saveImage, imageUpload } from '../lib/storage.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
+const upload = imageUpload(1);
 
 // Sections: [{ type: 'text', heading, body } | { type: 'list', heading, items[] } | { type: 'table', heading, columns[], rows[][] }
 //            | { type: 'stats', items: [{ value, label }] } | { type: 'callout', heading, body }]

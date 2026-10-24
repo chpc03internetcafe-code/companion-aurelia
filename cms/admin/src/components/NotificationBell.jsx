@@ -37,11 +37,11 @@ export default function NotificationBell() {
             {!connected && <p className="notif-warn">Reconnecting… new notifications will appear once the connection is back.</p>}
             <div className="notif-list">
               {items.length ? items.map((n) => (
-                <button key={n.id} className={`notif-item ${n.isRead ? '' : 'unread'}`} onClick={() => open(n)}>
+                <button key={n.id} className="notif-item unread" onClick={() => open(n)}>
                   <i aria-hidden="true">{MODULE_ICONS[n.module]}</i>
                   <span><strong>{n.title}</strong>{n.body && <small>{n.body}</small>}<time dateTime={n.createdAt}>{timeAgo(n.createdAt)}</time></span>
                 </button>
-              )) : <p className="notif-empty">No notifications yet. Booking requests, membership requests and messages from the website show up here as they happen.</p>}
+              )) : <p className="notif-empty">You’re all caught up. New booking requests, membership requests and messages from the website show up here as they happen.</p>}
             </div>
             <div className="notif-menu-foot">
               <label className="notif-pref"><input type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} /> Sound</label>

@@ -1,14 +1,13 @@
 // CMS: locations (cities and their service areas, each with a landing page) and profile categories.
 import { Router } from 'express';
-import multer from 'multer';
 import { one, q, run } from '../db/index.js';
 import { HttpError, idParam, wrap } from '../lib/http.js';
 import { getRow, insertRow, reorder, slugify, updateRow, validate } from '../lib/validate.js';
-import { removeImages, saveImage } from '../lib/storage.js';
+import { removeImages, saveImage, imageUpload } from '../lib/storage.js';
 import { validateSections } from './content.js';
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 1 } });
+const upload = imageUpload(1);
 const SLUG = { type: 'string', max: 120, pattern: /^[a-z0-9-]+$/, patternMessage: 'Use lowercase letters, numbers and dashes.' };
 
 const locationSchema = {

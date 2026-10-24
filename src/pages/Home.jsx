@@ -5,7 +5,7 @@ import { api, qs } from '../utils/api';
 import { faqLd, useSeo } from '../utils/seo';
 import { day } from '../utils/format';
 import ProfileCard from '../components/ProfileCard';
-import { FaqList, Loading, Photo, SectionHead } from '../components/Common';
+import { CardsSkeleton, FaqList, Photo, SectionHead } from '../components/Common';
 import { IconCalendar, IconCheck, IconCrown, IconShield } from '../components/Icons';
 
 function SearchPanel() {
@@ -100,7 +100,7 @@ export default function Home() {
       <section className="section" style={{ paddingTop: 10 }}>
         <div className="container">
           <SectionHead kicker="Featured" title="Featured companions" text="Hand-picked profiles, freshly verified by our team." action={<Link to="/companions?featured=1" className="btn btn-ghost">View all</Link>} />
-          {!data ? <Loading /> : <div className="grid-cards four">{data.featured.slice(0, 8).map((p) => <ProfileCard key={p.id} p={p} />)}</div>}
+          {!data ? <CardsSkeleton count={8} className="grid-cards four" /> : <div className="grid-cards four">{data.featured.slice(0, 8).map((p) => <ProfileCard key={p.id} p={p} />)}</div>}
         </div>
       </section>
 
@@ -120,7 +120,7 @@ export default function Home() {
       <section className="section">
         <div className="container">
           <SectionHead kicker="Just updated" title="Recently updated profiles" text="New photos, rates and availability — every profile shows when it was last updated." action={<Link to="/companions?sort=active" className="btn btn-ghost">Recently active</Link>} />
-          {!data ? <Loading /> : <div className="grid-cards four">{data.recent.slice(0, 4).map((p) => <ProfileCard key={p.id} p={p} />)}</div>}
+          {!data ? <CardsSkeleton count={4} className="grid-cards four" /> : <div className="grid-cards four">{data.recent.slice(0, 4).map((p) => <ProfileCard key={p.id} p={p} />)}</div>}
         </div>
       </section>
 
@@ -131,7 +131,7 @@ export default function Home() {
             <div className="grid-3">
               {popular.map((l) => (
                 <Link key={l.id} to={`/locations/${l.slug}`} className="loc-card">
-                  {l.imageUrl && <img src={l.imageUrl} alt={l.imageAlt || ''} loading="lazy" />}
+                  {l.imageUrl && <img src={l.imageUrl} alt={l.imageAlt || ''} loading="lazy" decoding="async" />}
                   <div><small>{l.region}</small><h3>{l.name}</h3><small>{l.profileCount} companions</small></div>
                 </Link>
               ))}
@@ -173,7 +173,7 @@ export default function Home() {
             <div className="grid-3">
               {data.posts.map((p) => (
                 <Link key={p.slug} to={`/guides/${p.slug}`} className="post-card">
-                  <div className="post-cover">{p.coverUrl ? <img src={p.coverUrl} alt={p.coverAlt || ''} loading="lazy" /> : p.kind}</div>
+                  <div className="post-cover">{p.coverUrl ? <img src={p.coverUrl} alt={p.coverAlt || ''} loading="lazy" decoding="async" /> : p.kind}</div>
                   <div className="post-card-body"><span className="kicker" style={{ margin: 0 }}>{p.kind} · {day(p.publishedAt)}</span><h3>{p.title}</h3><p>{p.excerpt}</p></div>
                 </Link>
               ))}

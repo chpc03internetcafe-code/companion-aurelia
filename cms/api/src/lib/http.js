@@ -23,13 +23,16 @@ export const idParam = (req, name = 'id') => {
 
 export const notFound = (what = 'Record') => new HttpError(404, `${what} not found.`);
 
-export const clientIp = (req) => req.headers['x-forwarded-for']?.split(',')[0].trim() || req.socket?.remoteAddress || null;
+// The client's IP, believing X-Forwarded-For only as far as a known proxy vouches for it (see lib/security.js).
+export { clientIp } from './security.js';
 
 // CSV with a BOM so Excel opens accented names (ñ) correctly.
 export function sendCsv(res, filename, header, rows) {
   const cell = (v) => {
     if (v == null) return '';
-    const s = v instanceof Date ? v.toISOString() : String(v);
+    let s = v instanceof Date ? v.toISOString() : String(v);
+    // text from the website (names, notes) starting with = + - @ would run as a formula in Excel
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const body = [header, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');

@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useUi } from '../lib/ui';
 import { day } from '../lib/format';
-import { Empty, ErrorBox, Field, Loading, Modal, PageHead, Pill, Tabs, Toggle, useAction, useForm, useLoad, useQueryState } from '../components/kit';
+import { Empty, ErrorBox, Field, Loading, Modal, PageHead, Pill, Tabs, Toggle, useAction, useForm, useLoad, usePaged, useQueryState } from '../components/kit';
 
 function Pages({ manage }) {
   const { data, loading, error, reload } = useLoad(() => api.get('/content/pages'), []);
@@ -38,6 +38,7 @@ function Posts({ manage }) {
   const { data, loading, error, reload, setData } = useLoad(() => api.get('/content/posts'), []);
   const [run] = useAction();
   const navigate = useNavigate();
+  const { items, pager } = usePaged(data || []);
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   const patch = (p, body) => run(() => api.patch(`/content/posts/${p.id}`, body)).then((r) => r && setData(r));
@@ -46,7 +47,7 @@ function Posts({ manage }) {
       {data.length ? (
         <table className="table">
           <thead><tr><th>Title</th><th>Type</th><th>Audience</th><th className="hide-sm">Published</th><th>Status</th></tr></thead>
-          <tbody>{data.map((p) => (
+          <tbody>{items.map((p) => (
             <tr key={p.id} className="clickable" onClick={() => navigate(`/content/posts/${p.id}`)}>
               <td><strong>{p.isPinned ? '📌 ' : ''}{p.title}</strong><span className="sub">/guides/{p.slug}{p.locationName ? ` · ${p.locationName}` : ''}</span></td>
               <td><Pill>{p.kind}</Pill></td>
@@ -57,6 +58,7 @@ function Posts({ manage }) {
           ))}</tbody>
         </table>
       ) : <Empty title="No articles yet" text="Write city guides, booking tips, announcements and member-only news." />}
+      {pager}
     </div>
   );
 }

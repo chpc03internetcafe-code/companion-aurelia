@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { lazy } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -8,25 +8,29 @@ import { AuthProvider, useAuth } from './lib/auth';
 import { NotificationsProvider } from './lib/notifications';
 import { ForcePasswordScreen, LoginScreen, SetupScreen } from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Bookings from './pages/Bookings';
-import BookingDetail from './pages/BookingDetail';
-import Profiles from './pages/Profiles';
-import ProfileEditor from './pages/ProfileEditor';
-import ProfileUpdates from './pages/ProfileUpdates';
-import Members from './pages/Members';
-import MemberDetail from './pages/MemberDetail';
-import Locations, { LocationEditor } from './pages/Locations';
-import Vip from './pages/Vip';
-import Content from './pages/Content';
-import ContentEditor from './pages/ContentEditor';
-import PostEditor from './pages/PostEditor';
-import Seo from './pages/Seo';
-import Inquiries from './pages/Inquiries';
-import Settings from './pages/Settings';
-import Users from './pages/Users';
-import Roles from './pages/Roles';
-import AuditTrail from './pages/AuditTrail';
-import Notifications from './pages/Notifications';
+// Sections are separate chunks, downloaded the first time a section is opened.
+const named = (load, name) => lazy(() => load().then((m) => ({ default: m[name] })));
+const loadLocations = () => import('./pages/Locations');
+const Bookings = lazy(() => import('./pages/Bookings'));
+const BookingDetail = lazy(() => import('./pages/BookingDetail'));
+const Profiles = lazy(() => import('./pages/Profiles'));
+const ProfileEditor = lazy(() => import('./pages/ProfileEditor'));
+const ProfileUpdates = lazy(() => import('./pages/ProfileUpdates'));
+const Members = lazy(() => import('./pages/Members'));
+const MemberDetail = lazy(() => import('./pages/MemberDetail'));
+const Locations = lazy(loadLocations);
+const LocationEditor = named(loadLocations, 'LocationEditor');
+const Vip = lazy(() => import('./pages/Vip'));
+const Content = lazy(() => import('./pages/Content'));
+const ContentEditor = lazy(() => import('./pages/ContentEditor'));
+const PostEditor = lazy(() => import('./pages/PostEditor'));
+const Seo = lazy(() => import('./pages/Seo'));
+const Inquiries = lazy(() => import('./pages/Inquiries'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Users = lazy(() => import('./pages/Users'));
+const Roles = lazy(() => import('./pages/Roles'));
+const AuditTrail = lazy(() => import('./pages/AuditTrail'));
+const Notifications = lazy(() => import('./pages/Notifications'));
 import './styles.css';
 
 // Pages a role can't view show a notice instead (the API refuses the data anyway).
@@ -85,7 +89,7 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <BrowserRouter>
       <AuthProvider>
         <App />
       </AuthProvider>

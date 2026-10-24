@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useUi } from '../lib/ui';
 import { moduleForPath, useAuth } from '../lib/auth';
 import { NOTIFY_MODULES, useNotifications } from '../lib/notifications';
-import { Avatar, Modal } from './kit';
+import { Avatar, Loading, Modal } from './kit';
 import NotificationBell from './NotificationBell';
+import { IdleWarning, useIdleTimeout } from '../lib/idle';
 import { ChangePasswordForm } from '../pages/Login';
 
 const NAV = [
@@ -33,7 +34,8 @@ const NAV = [
 
 export default function Layout() {
   const { metaError, loadMeta, meta, toast } = useUi();
-  const { user, can, logout } = useAuth();
+  const { user, can, logout, idleLogout } = useAuth();
+  const idleLeft = useIdleTimeout(meta?.site?.idleMinutes, idleLogout);
   const { unread } = useNotifications();
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -123,9 +125,10 @@ export default function Layout() {
             <div className="banner-error"><strong>Can’t connect to the API.</strong> {metaError}<button className="btn btn-sm btn-ghost" onClick={loadMeta}>Retry</button></div>
           )}
           {viewOnly && <div className="view-only">👁 View only — your role ({user.role}) can see this section but not change it.</div>}
-          {meta ? <Outlet /> : !metaError && <div className="loading"><span className="spinner" />Loading…</div>}
+          {meta ? <Suspense fallback={<div className="card"><Loading /></div>}><Outlet /></Suspense> : !metaError && <div className="card"><Loading /></div>}
         </main>
       </div>
+      <IdleWarning seconds={idleLeft} onSignOut={logout} />
       {changingPw && (
         <Modal title="Change password" onClose={() => setChangingPw(false)} size="narrow">
           <ChangePasswordForm onDone={() => { setChangingPw(false); toast('Password changed. Other devices were signed out.'); }} />

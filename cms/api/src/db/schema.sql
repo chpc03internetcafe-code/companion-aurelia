@@ -602,10 +602,54 @@ CREATE TABLE IF NOT EXISTS notification_reads (
   PRIMARY KEY (notification_id, user_id)
 );
 
--- Keep these tables out of Supabase's auto-generated REST API: the CMS API is the only way in.
+-- ---------- Performance indexes ----------
+-- For the busiest filters and sorts (directory, CMS lists, notifications), and for foreign keys whose
+-- ON DELETE would otherwise scan the whole child table.
+CREATE INDEX IF NOT EXISTS ix_profiles_vip_tier ON profiles(vip_tier_id) WHERE vip_tier_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_profiles_published ON profiles(is_featured DESC, sort_order, published_at DESC) WHERE status = 'Published';
+CREATE INDEX IF NOT EXISTS ix_profiles_updated ON profiles(updated_at DESC);
+CREATE INDEX IF NOT EXISTS ix_profile_rates_active ON profile_rates(profile_id, price) WHERE is_active;
+CREATE INDEX IF NOT EXISTS ix_bookings_created ON bookings(created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_bookings_email ON bookings(lower(client_email));
+CREATE INDEX IF NOT EXISTS ix_bookings_location ON bookings(location_id) WHERE location_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_bookings_rate ON bookings(rate_id) WHERE rate_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_members_created ON members(created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_memberships_tier ON memberships(tier_id);
+CREATE INDEX IF NOT EXISTS ix_member_favorites_profile ON member_favorites(profile_id);
+CREATE INDEX IF NOT EXISTS ix_collection_profiles_profile ON collection_profiles(profile_id);
+CREATE INDEX IF NOT EXISTS ix_posts_kind ON posts(kind, is_pinned DESC, published_at DESC) WHERE is_published;
+CREATE INDEX IF NOT EXISTS ix_posts_location ON posts(location_id, published_at DESC) WHERE location_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_inquiries_created ON inquiries(created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_inquiries_member ON inquiries(member_id) WHERE member_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_audit_log_user ON audit_log(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ix_notifications_module ON notifications(module, id DESC);
+CREATE INDEX IF NOT EXISTS ix_notification_reads_user ON notification_reads(user_id);
+
+-- Sign-in / sign-up / form limits shared by every API instance (lib/auth.js). Keys are SHA-256 hashes.
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key       CHAR(64) PRIMARY KEY,
+  count     INT NOT NULL DEFAULT 1,
+  reset_at  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_rate_limits_reset ON rate_limits(reset_at);
+
+-- ---------- Access control ----------
+-- The CMS API is the only way in. It connects as the database owner, which isn't subject to row level
+-- security. Every table has RLS switched on with no policies, so Supabase's public roles (anon,
+-- authenticated: the REST/GraphQL API and its public key) can't read or change any row, even if a grant
+-- is added by mistake later. Their grants are revoked as well, including for tables created later.
 DO $$
+DECLARE t record;
 BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t.tablename);
+  END LOOP;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
     EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated';
+    EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated';
+    EXECUTE 'REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated';
+    EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated';
+    EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM anon, authenticated';
+    EXECUTE 'ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE EXECUTE ON FUNCTIONS FROM anon, authenticated';
   END IF;
 END $$;

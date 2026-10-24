@@ -4,12 +4,12 @@
 // Accounts are created by staff (CMS → profile → Portal access), who email an invitation link; the companion
 // chooses a password from it. Companions never see client contact details — the concierge stays in between.
 import crypto from 'node:crypto';
+import { devLinksAllowed } from '../lib/security.js';
 import { Router } from 'express';
-import multer from 'multer';
 import { one, q, run, tx } from '../db/index.js';
 import {
   createMfaChallenge, endSession, hashPassword, passwordProblem, readCookie, REALMS, revokeMemberSessions, SECRET_COLUMNS, sha256, startSession, throttle,
-  verifyPassword,
+  checkPassword, loginLimiter, upgradeHash,
 } from '../lib/auth.js';
 import { backupCodesLeft, passSecondStep, securityRoutes } from '../lib/account-security.js';
 import { clientIp, HttpError, wrap } from '../lib/http.js';
@@ -19,7 +19,7 @@ import { logEvent } from '../lib/audit.js';
 import { notify } from '../lib/mailer.js';
 import { bookingStatusChanged, passwordChanged, passwordReset } from '../lib/emails.js';
 import { companionAnsweredNote, notifyStaff, profileChangeNote } from '../lib/notifications.js';
-import { removeImages, saveImage } from '../lib/storage.js';
+import { removeImages, saveImage, imageUpload } from '../lib/storage.js';
 import { loadSettings } from '../services/settings.js';
 import { addEvent, loadBooking, parseFees, publicBooking, SELECT_BOOKING } from '../services/bookings.js';
 import { loadSchedule, parseBlocks, parseTimeOff, saveSchedule, saveTimeOff } from '../services/schedule.js';
@@ -28,8 +28,9 @@ import { chatState, lastMessages, messageCounts, readChat, sendChat } from '../s
 
 const router = Router();
 const realm = REALMS.companion;
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024, files: 6 } });
-const devMode = () => !process.env.VERCEL && process.env.NODE_ENV !== 'production';
+const upload = imageUpload(6);
+// email links are shown on screen only on a developer's machine (see lib/security.js)
+const devMode = devLinksAllowed;
 const site = () => (process.env.SITE_URL || 'http://localhost:5173').replace(/\/+$/, '');
 
 const ACCOUNT_COLUMNS = `ca.*, p.display_name, p.slug, p.status AS profile_status, p.away_until, p.away_note,
@@ -102,16 +103,17 @@ async function findToken(purpose, token, consume = false) {
 // ---------- Sign-in ----------
 router.post('/login', wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
-  const limiter = throttle(`clogin:${clientIp(req)}:${email}`, { max: 8 });
+  const limiter = await loginLimiter('clogin', req, email);
   const a = await one(`${SELECT_ACCOUNT} WHERE lower(ca.email) = $1`, [email]);
   if (a?.status === 'Invited') throw new HttpError(401, 'Your access isn’t set up yet — open the invitation link we emailed you to choose a password.');
-  const ok = a?.passwordHash && (await verifyPassword(String(req.body.password || ''), a.passwordHash));
+  const ok = await checkPassword(req.body.password, a?.passwordHash);
   if (!ok) {
-    limiter.fail();
+    await limiter.fail();
     throw new HttpError(401, 'Incorrect email or password.', { password: 'Incorrect email or password.' });
   }
   if (a.status !== 'Active' || a.profileStatus === 'Retired') throw new HttpError(403, 'Portal access for this profile is paused. Please contact the concierge.');
-  limiter.clear();
+  await limiter.clear();
+  await upgradeHash('companion_accounts', a.id, req.body.password, a.passwordHash);
   const remember = req.body.remember !== false;
   if (a.totpEnabledAt) return res.json({ mfaRequired: true, mfaToken: await createMfaChallenge(a.id, remember, realm) });
   await startSession(req, res, a.id, remember, realm);
@@ -142,7 +144,7 @@ router.get('/session', wrap(async (req, res) => {
 
 // ---------- Invitation: choose a password ----------
 router.post('/invite/check', wrap(async (req, res) => {
-  throttle(`cinvite:${clientIp(req)}`, { max: 20 }).fail();
+  await (await throttle(`cinvite:${clientIp(req)}`, { max: 20 })).fail();
   const id = await findToken('invite', req.body.token);
   const a = id && (await accountById(id));
   if (!a || a.status !== 'Invited') throw new HttpError(410, 'This invitation has expired or was already used. Ask the concierge for a new one.');
@@ -165,8 +167,8 @@ router.post('/invite/accept', wrap(async (req, res) => {
 router.post('/forgot-password', wrap(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(422, 'Enter a valid email address.', { email: 'Enter a valid email address.' });
-  throttle(`cforgot:${clientIp(req)}`, { max: 5, windowMs: 3600000 }).fail();
-  throttle(`cforgot:${email}`, { max: 3, windowMs: 3600000 }).fail();
+  await (await throttle(`cforgot:${clientIp(req)}`, { max: 5, windowMs: 3600000 })).fail();
+  await (await throttle(`cforgot:${email}`, { max: 3, windowMs: 3600000 })).fail();
   const a = await one(`${SELECT_ACCOUNT} WHERE lower(ca.email) = $1 AND ca.status = 'Active'`, [email]);
   let devLink;
   if (a) {

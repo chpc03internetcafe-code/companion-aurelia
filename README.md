@@ -185,6 +185,29 @@ Copy `cms/api/.env.example` to `cms/api/.env`. Everything is optional for local 
 
 The embedded database is for local development only. The API refuses to start on Vercel without `DATABASE_URL`.
 
+## Performance
+- **CDN and load balancing:** on Vercel, the edge network serves the built files and the platform runs as many API instances as traffic needs. `vercel.json` caches hashed `/assets/*` for a year. Public API responses that are the same for everyone (bootstrap, pages, categories, locations) are cached at the CDN for 30 s (`s-maxage`). Uploaded images are named uniquely and cached for a year. `CDN_URL` (website build) serves JS/CSS from a separate CDN host if you use one.
+- **Self-hosting:** `WEB_CONCURRENCY=4` (or `auto`) runs that many API workers behind Node's cluster balancer, which restarts crashed workers. This needs `DATABASE_URL`; the embedded database runs one process. Use `GET /api/health` as the load-balancer health check.
+- **Database:** connection pooling through `pg.Pool` (`PG_POOL_MAX`, default 10, or 3 on Vercel). On Vercel, use Supabase's transaction pooler (port 6543). Indexes for the busy filters, sorts and foreign keys are in `schema.sql` / `supabase-setup.sql`; re-run it on an existing database to add them.
+- **Server cache:** site settings, the website bootstrap, homepage lists, sitemap and CMS option lists are kept in memory for 30 s to 5 min (`cms/api/src/lib/cache.js`). Any successful save clears this cache on the instance that handled it, so other instances can show old values until their copy expires.
+- **Payloads and images:** API responses over 1 KB are gzip/brotli compressed. Uploaded photos are resized to at most 1600 px, converted to WebP and stripped of metadata (`sharp`).
+- **Front end:** each page is its own chunk (React and the router in a long-cached `vendor` chunk). JS, CSS and HTML are minified in production builds. Images below the fold load lazily. Web fonts don't block the first paint. Loading skeletons show while content loads, search inputs are debounced, and long lists are paginated.
+- **Audit:** `npm run build`, `npm run preview` (with the API running), then `npm run lighthouse` (or `npm run lighthouse -- https://your-site`). It needs Chrome. Reports go to `lighthouse-reports/`. `LH_PRESET=desktop` runs the desktop profile.
+
+## Security
+- **Sessions:** httpOnly, SameSite=Lax cookies (members, companions, staff); only a SHA-256 of each token is stored. Nothing secret is kept in `localStorage`/`sessionStorage`; a guest's booking reference + email is kept in memory only.
+- **Passwords:** scrypt (N=2^16, r=8, p=2) with a random salt. Older hashes are upgraded at the next sign-in. Common passwords and passwords containing the email are refused. Unknown emails take as long to check as wrong passwords.
+- **Rate limits:** sign-in (per IP + email and per account), sign-up, password reset, booking lookup, booking and contact forms are counted in the `rate_limits` table, shared by every instance. A per-IP ceiling (`RATE_LIMIT_READS`/`RATE_LIMIT_WRITES` per minute) applies to all API calls. Set `TRUST_PROXY` when self-hosting behind a proxy.
+- **Database:** every query uses `$n` parameters. Row level security is on for every table with no policies, and Supabase's `anon`/`authenticated` roles have no grants. The API connects as the owner. Re-run `supabase-setup.sql` on an existing database to apply this.
+- **Permissions:** checked on the server for every request (CMS role per section, member/companion ownership). Changes from other websites are refused (Origin check), and CORS allows only `CORS_ORIGIN`.
+- **Input:** schema validation on every form (text only for text fields, control characters removed, strict email syntax). At sign-up, the email domain must be able to receive mail (`EMAIL_DNS_CHECK`), and the account exists only once the emailed link is opened. CSV exports neutralise formulas.
+- **Uploads:** JPG/PNG/WEBP only, checked from the file's bytes, at most 4 MB and 40 megapixels. Every image is decoded and re-encoded, which strips metadata and anything hidden in the file.
+- **XSS:** React escapes all content. Production builds add a Content Security Policy (own scripts only). The API and pages send `nosniff`, `X-Frame-Options: DENY`, HSTS and a referrer policy.
+- **Production:** generic error messages, no stack traces or SQL in responses, `x-powered-by` off, no source maps. Email links are shown on screen only on a developer's machine (embedded database, or `SHOW_DEV_LINKS=1`). Logs mask email addresses and never contain passwords, tokens or two-step secrets (also stripped from the audit trail).
+- **Secrets:** only in environment variables on the server (`cms/api/.env` locally, Vercel settings when deployed). None are sent to the browser.
+- **Webhooks:** none are received yet. `cms/api/src/lib/webhooks.js` verifies HMAC-SHA256 signatures with a time window and replay check; mount new webhooks under `/api/webhooks/`.
+- **Dependencies:** `npm audit` reports no known vulnerabilities in the website, API or CMS. Re-check with `npm audit` in each folder.
+
 ## Project layout
 ```
 src/                 website + member portal (React + Vite): pages/, components/, context/, utils/ (api, seo, theme, format)

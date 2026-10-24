@@ -8,6 +8,7 @@
 // read back only through a staff-only API route.
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import multer from 'multer';
 import { fileURLToPath } from 'node:url';
 
 const apiRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -59,18 +60,64 @@ export function sniffImage(buffer) {
   return null;
 }
 
+/**
+ * Upload middleware for photos: in memory, at most `maxFiles` files of 4 MB, a few small text fields, and only
+ * files the browser reports as JPG/PNG/WEBP. The file's real type is checked again from its bytes in saveImage.
+ */
+export function imageUpload(maxFiles) {
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 4 * 1024 * 1024, files: maxFiles, fields: 20, fieldSize: 100 * 1024, parts: maxFiles + 20 },
+    fileFilter: (_req, file, cb) => (Object.values(IMAGE_TYPES).includes(file.mimetype)
+      ? cb(null, true)
+      : cb(Object.assign(new Error('Upload JPG, PNG or WEBP images only.'), { status: 422 }))),
+  });
+}
+
 export const newFileName = (ext) => `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
 
-/** Saves a public image (profile photo, location or post cover). Returns { url, fileName }. */
-export async function saveImage(buffer, folder) {
-  const ext = sniffImage(buffer);
-  if (!ext) throw Object.assign(new Error('Upload a JPG, PNG or WEBP image.'), { status: 422 });
+// Public images are fully decoded, resized to fit MAX_SIDE and re-encoded as WebP (EXIF orientation applied,
+// metadata such as GPS location stripped). Re-encoding also drops anything hidden in the file besides the
+// picture (e.g. a script appended to a valid JPEG). A file that doesn't decode as an image is refused; only
+// if sharp isn't installed on the platform is the (type-checked) original stored.
+const MAX_SIDE = 1600;
+const WEBP_QUALITY = 80;
+const MAX_INPUT_PIXELS = 40_000_000; // ~8000×5000; bigger "images" are usually decompression bombs
+let sharpLib; // undefined = not loaded yet, null = not installed on this platform
+async function compressImage(buffer, ext) {
+  if (sharpLib === undefined) {
+    sharpLib = await import('sharp').then((m) => m.default, (err) => {
+      console.warn('[storage] sharp unavailable, images are stored as uploaded:', err.message);
+      return null;
+    });
+  }
+  if (!sharpLib) return { buffer, ext };
+  try {
+    const out = await sharpLib(buffer, { failOn: 'error', limitInputPixels: MAX_INPUT_PIXELS, animated: false })
+      .rotate()
+      .resize({ width: MAX_SIDE, height: MAX_SIDE, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: WEBP_QUALITY, effort: 4 })
+      .toBuffer();
+    return { buffer: out, ext: '.webp' };
+  } catch (err) {
+    console.warn('[storage] image refused:', err.message);
+    throw Object.assign(new Error(/pixel limit/i.test(err.message)
+      ? 'This image is too large. Upload one under 8000 × 5000 pixels.'
+      : 'This file couldn’t be read as an image. Upload a JPG, PNG or WEBP photo.'), { status: 422 });
+  }
+}
+
+/** Saves a public image (profile photo, location or post cover), compressed. Returns { url, fileName }. */
+export async function saveImage(original, folder) {
+  const sniffed = sniffImage(original);
+  if (!sniffed) throw Object.assign(new Error('Upload a JPG, PNG or WEBP image.'), { status: 422 });
+  const { buffer, ext } = await compressImage(original, sniffed);
   const key = `${folder}/${newFileName(ext)}`;
   if (usingSupabase) {
     await ensureBucket(BUCKET, true);
     await check(await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${key}`, {
       method: 'POST',
-      headers: headers({ 'Content-Type': IMAGE_TYPES[ext], 'Cache-Control': 'max-age=604800', 'x-upsert': 'true' }),
+      headers: headers({ 'Content-Type': IMAGE_TYPES[ext], 'Cache-Control': 'public, max-age=31536000, immutable', 'x-upsert': 'true' }),
       body: buffer,
     }), 'upload');
     return { url: publicUrl(key), fileName: key };

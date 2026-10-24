@@ -46,7 +46,7 @@ export function LoginScreen() {
   return (
     <AuthShell>
       <h1>Staff sign-in</h1>
-      <p className="muted">{expired ? 'Your session ended. Please sign in again.' : 'Sign in with your staff account.'}</p>
+      <p className="muted">{expired === 'idle' ? 'You were signed out after a period of inactivity. Please sign in again.' : expired ? 'Your session ended. Please sign in again.' : 'Sign in with your staff account.'}</p>
       <form onSubmit={submit}>
         <Field label="Email"><input type="email" autoComplete="username" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required autoFocus /></Field>
         <Field label="Password" error={error}><input type="password" autoComplete="current-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></Field>

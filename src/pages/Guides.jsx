@@ -5,7 +5,7 @@ import { useSite } from '../context/SiteContext';
 import { api, qs } from '../utils/api';
 import { breadcrumbLd, useSeo } from '../utils/seo';
 import { day } from '../utils/format';
-import { Empty, Loading, PageHero, Sections } from '../components/Common';
+import { Empty, PageHero, PageSkeleton, PostsSkeleton, Sections } from '../components/Common';
 import { IconCrown, IconLock } from '../components/Icons';
 import NotFound from './NotFound';
 
@@ -14,7 +14,7 @@ const KINDS = [['', 'All'], ['Guide', 'Guides'], ['Announcement', 'Announcements
 export function PostCard({ p }) {
   return (
     <Link to={`/guides/${p.slug}`} className="post-card">
-      <div className="post-cover">{p.coverUrl ? <img src={p.coverUrl} alt={p.coverAlt || ''} loading="lazy" /> : p.kind}</div>
+      <div className="post-cover">{p.coverUrl ? <img src={p.coverUrl} alt={p.coverAlt || ''} loading="lazy" decoding="async" /> : p.kind}</div>
       <div className="post-card-body">
         <span className="kicker" style={{ margin: 0 }}>{p.kind} · {day(p.publishedAt)}{p.locationName ? ` · ${p.locationName}` : ''}</span>
         <h3>{p.title}</h3>
@@ -29,8 +29,18 @@ export default function Guides() {
   const [params, setParams] = useSearchParams();
   const kind = params.get('kind') || '';
   const { member } = useSite();
-  const [posts, setPosts] = useState(null);
-  useEffect(() => { setPosts(null); api('GET', `/site/posts${qs({ kind })}`).then(setPosts).catch(() => setPosts([])); }, [kind, member?.tierRank]);
+  // 12 articles at a time; "Load more" appends the next page.
+  const [list, setList] = useState(null);
+  const [more, setMore] = useState(false);
+  const load = (page) => {
+    setMore(page > 1);
+    return api('GET', `/site/posts${qs({ kind, page, pageSize: 12 })}`)
+      .then((r) => setList((prev) => ({ ...r, items: page > 1 && prev ? [...prev.items, ...r.items] : r.items })))
+      .catch(() => setList((prev) => prev || { items: [], total: 0, page: 1, pageSize: 12 }))
+      .finally(() => setMore(false));
+  };
+  useEffect(() => { setList(null); load(1); }, [kind, member?.tierRank]); // eslint-disable-line react-hooks/exhaustive-deps
+  const posts = list?.items;
   useSeo({ title: 'Guides & announcements', description: 'City guides, booking tips, etiquette and announcements.', jsonLd: breadcrumbLd([['Home', '/'], ['Guides', '/guides']]) });
   return (
     <>
@@ -40,7 +50,13 @@ export default function Guides() {
           <div className="chip-row" style={{ marginBottom: 24 }}>
             {KINDS.map(([k, label]) => <button key={k} className={`chip ${kind === k ? 'on' : ''}`} onClick={() => setParams(k ? { kind: k } : {})}>{label}</button>)}
           </div>
-          {!posts ? <Loading /> : posts.length ? <div className="grid-3">{posts.map((p) => <PostCard key={p.slug} p={p} />)}</div> : <Empty title="Nothing here yet" text="Check back soon." />}
+          <h2 className="sr-only">Articles</h2>
+          {!posts ? <PostsSkeleton /> : posts.length ? <div className="grid-3">{posts.map((p) => <PostCard key={p.slug} p={p} />)}</div> : <Empty title="Nothing here yet" text="Check back soon." />}
+          {list && posts.length < list.total && (
+            <p className="center" style={{ marginTop: 30 }}>
+              <button className="btn btn-ghost" disabled={more} onClick={() => load(list.page + 1)}>{more ? 'Loading…' : `Load more (${list.total - posts.length} more)`}</button>
+            </p>
+          )}
         </div>
       </section>
     </>
@@ -63,7 +79,7 @@ export function GuidePage() {
       breadcrumbLd([['Home', '/'], ['Guides', '/guides'], [p.title, `/guides/${p.slug}`]]),
     ] : null,
   } : { title: 'Article', noindex: true });
-  if (state.loading) return <Loading />;
+  if (state.loading) return <PageSkeleton />;
   if (state.error === 404) return <NotFound />;
   if (state.error) return <div className="narrow section"><div className="notice error">This article couldn’t be loaded.</div></div>;
   return (
@@ -73,7 +89,7 @@ export function GuidePage() {
       </PageHero>
       <section className="section" style={{ paddingTop: 36 }}>
         <div className="narrow">
-          {p.coverUrl && <img src={p.coverUrl} alt={p.coverAlt || ''} style={{ borderRadius: 22, marginBottom: 30, width: '100%' }} />}
+          {p.coverUrl && <img src={p.coverUrl} alt={p.coverAlt || ''} decoding="async" fetchpriority="high" style={{ borderRadius: 22, marginBottom: 30, width: '100%' }} />}
           {p.locked ? (
             <div className="locked-box" style={{ padding: 26 }}>
               <IconLock size={32} style={{ color: 'var(--primary)', flex: 'none' }} />

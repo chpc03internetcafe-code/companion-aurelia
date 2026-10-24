@@ -9,7 +9,13 @@ const GROUPS = {
   general: ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl', 'telegramUrl', 'whatsappUrl', 'currency'],
   homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText'],
   booking: ['autoConfirm', 'bookingLeadHours', 'bookingWindowDays', 'cancelCutoffHours', 'rescheduleLimit', 'slotMinutes', 'bufferMinutes', 'membersOnlyBooking', 'bookingPolicy', 'memberPaymentInstructions'],
+  security: ['staffIdleMinutes', 'companionIdleMinutes', 'memberIdleMinutes'],
 };
+const IDLE_FIELDS = [
+  ['staffIdleMinutes', 'CMS staff', 'Staff using this CMS'],
+  ['companionIdleMinutes', 'Companion portal', 'Companions signed in to their portal on the website'],
+  ['memberIdleMinutes', 'Member accounts', 'Clients signed in to their account on the website'],
+];
 const pickKeys = (s, keys) => Object.fromEntries(keys.map((k) => [k, s[k] ?? '']));
 
 function SettingsForm({ initial, keys, manage, onSaved, children }) {
@@ -95,8 +101,8 @@ export default function Settings() {
   const s = data.settings;
   return (
     <>
-      <PageHead title="Site settings" subtitle="Brand and contact details, homepage text, website theme, booking rules and fees." />
-      <Tabs tabs={[['general', 'Brand & contact'], ['homepage', 'Homepage & notices'], ['theme', 'Website theme'], ['booking', 'Booking rules'], ['fees', 'Fees'], ['email', 'Email']]} value={q.tab} onChange={(tab) => setQ({ tab })} />
+      <PageHead title="Site settings" subtitle="Brand and contact details, homepage text, website theme, booking rules, fees and sign-in security." />
+      <Tabs tabs={[['general', 'Brand & contact'], ['homepage', 'Homepage & notices'], ['theme', 'Website theme'], ['booking', 'Booking rules'], ['fees', 'Fees'], ['security', 'Security'], ['email', 'Email']]} value={q.tab} onChange={(tab) => setQ({ tab })} />
       {q.tab === 'general' && (
         <SettingsForm key="general" initial={s} keys={GROUPS.general} manage={manage} onSaved={saved}>
           {({ form, set, errors }) => (
@@ -175,6 +181,25 @@ export default function Settings() {
               <div className="card card-pad stack">
                 <Field label="Booking policy" error={errors.bookingPolicy} hint="Shown after booking and in emails"><textarea rows={5} value={form.bookingPolicy} onChange={set('bookingPolicy')} /></Field>
                 <Field label="Membership payment instructions" error={errors.memberPaymentInstructions} hint="Shown when a member requests a tier"><textarea rows={5} value={form.memberPaymentInstructions} onChange={set('memberPaymentInstructions')} /></Field>
+              </div>
+            </div>
+          )}
+        </SettingsForm>
+      )}
+      {q.tab === 'security' && (
+        <SettingsForm key="security" initial={s} keys={GROUPS.security} manage={manage} onSaved={saved}>
+          {({ form, set, errors }) => (
+            <div className="card card-pad stack">
+              <div>
+                <h2>Sign out after inactivity</h2>
+                <p className="muted" style={{ margin: '4px 0 0' }}>Signs people out when they haven’t used the site for this many minutes, even with “Keep me signed in” ticked. A warning appears a minute before, with the option to stay signed in. Enter 0 to turn it off.</p>
+              </div>
+              <div className="form-grid cols-3">
+                {IDLE_FIELDS.map(([key, label, hint]) => (
+                  <Field key={key} label={`${label} (minutes)`} error={errors[key]} hint={hint}>
+                    <input type="number" min={0} max={1440} value={form[key]} onChange={set(key)} />
+                  </Field>
+                ))}
               </div>
             </div>
           )}
