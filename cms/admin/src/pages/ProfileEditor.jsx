@@ -1,4 +1,4 @@
-// Profile editor: details & verification, media (photos, videos, alt text, VIP-only), rates, weekly availability,
+// Profile editor: details & verification, media (photos, videos, alt text, hidden from the website), rates, weekly availability,
 // time off, visibility & SEO, and retiring a profile (with an optional redirect).
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -7,11 +7,10 @@ import { useAuth } from '../lib/auth';
 import { useUi } from '../lib/ui';
 import { dateTime, day, duration, money, WEEKDAYS } from '../lib/format';
 import { ErrorBox, Field, KeyVals, Loading, Modal, PageHead, Pill, SeoFields, Tabs, Toggle, useAction, useForm, useLoad, useQueryState } from '../components/kit';
-import PortalAccess from '../components/PortalAccess';
 
 const EMPTY = {
   displayName: '', slug: '', categoryId: '', baseLocationId: '', areaIds: [], age: '', tagline: '', bio: '', languages: '', nationality: '', heightCm: '',
-  attributes: [], status: 'Draft', isFeatured: false, isVerified: false, ageVerified: false, verificationNotes: '', vipTierId: '', bookingEnabled: true,
+  attributes: [], status: 'Draft', isFeatured: false, isVerified: false, ageVerified: false, verificationNotes: '', bookingEnabled: true,
   awayUntil: '', awayNote: '', seoTitle: '', metaDescription: '', staffNotes: '',
 };
 const toForm = (p) => Object.fromEntries(Object.keys(EMPTY).map((k) => [k, p[k] ?? EMPTY[k]]));
@@ -86,7 +85,6 @@ function Visibility({ form, set, setForm, errors, profile }) {
           <div className="section-title" style={{ marginTop: 0 }}>Visibility</div>
           <Field label="Status" error={errors.status}><select value={form.status} onChange={set('status')}><option>Draft</option><option>Published</option><option>Hidden</option></select></Field>
           <Toggle checked={form.isFeatured} onChange={(v) => setForm({ ...form, isFeatured: v })} label="Featured" hint="Shown first in the directory and on the homepage" />
-          <Field label="VIP profile" hint="Only members of this tier or higher see the profile. Kept out of search engines."><select value={form.vipTierId || ''} onChange={set('vipTierId')}><option value="">Public — everyone</option>{meta.tiers.map((t) => <option key={t.id} value={t.id}>{t.name} members and up</option>)}</select></Field>
           <Toggle checked={form.bookingEnabled} onChange={(v) => setForm({ ...form, bookingEnabled: v })} label="Online booking" hint="Off = clients can only send an inquiry" />
           <div className="form-grid">
             <Field label="Away until" error={errors.awayUntil} hint="Hides availability up to this date"><input type="date" value={form.awayUntil || ''} onChange={set('awayUntil')} /></Field>
@@ -110,12 +108,10 @@ function Media({ p, onChange, manage }) {
   const fileRef = useRef(null);
   const [run, busy] = useAction();
   const [video, setVideo] = useState(null);
-  const [vipUpload, setVipUpload] = useState(false);
   const upload = async (files) => {
     if (!files?.length) return;
     const fd = new FormData();
     for (const f of files) fd.append('photos', f);
-    fd.append('vipOnly', vipUpload ? 'true' : 'false');
     const r = await run(() => api.post(`/profiles/${p.id}/media`, fd), `${files.length} photo(s) uploaded`);
     if (r) onChange(r);
     fileRef.current.value = '';
@@ -133,9 +129,8 @@ function Media({ p, onChange, manage }) {
         <div className="card card-pad row">
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(e) => upload(e.target.files)} />
           <button className="btn btn-primary" onClick={() => fileRef.current.click()} disabled={busy}>{busy ? 'Uploading…' : '+ Upload photos'}</button>
-          <label className="check"><input type="checkbox" checked={vipUpload} onChange={(e) => setVipUpload(e.target.checked)} /> Upload as VIP-only (private gallery)</label>
           <span className="spacer" />
-          <button className="btn btn-ghost" onClick={() => setVideo({ url: '', posterUrl: '', altText: '', vipOnly: false })}>+ Add video link</button>
+          <button className="btn btn-ghost" onClick={() => setVideo({ url: '', posterUrl: '', altText: '' })}>+ Add video link</button>
           <span className="muted" style={{ width: '100%' }}>JPG, PNG or WEBP up to 4 MB. The main photo is used on cards and when sharing. Videos: YouTube, Vimeo or an https link to an .mp4 file.</span>
         </div>
       )}
@@ -145,7 +140,7 @@ function Media({ p, onChange, manage }) {
             <div key={m.id} className={`media-item ${m.isPrimary ? 'primary' : ''}`}>
               <div className="media-img">
                 {m.kind === 'video' ? (m.posterUrl ? <img src={m.posterUrl} alt="" /> : <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#fff', fontSize: 30 }}>▶</div>) : <img src={m.url} alt="" loading="lazy" />}
-                <div className="media-tags">{m.isPrimary && <Pill tone="green">Main</Pill>}{m.vipOnly && <Pill tone="violet">VIP</Pill>}{m.kind === 'video' && <Pill tone="blue">Video</Pill>}</div>
+                <div className="media-tags">{m.isPrimary && <Pill tone="green">Main</Pill>}{m.isHidden && <Pill tone="amber">Hidden</Pill>}{m.kind === 'video' && <Pill tone="blue">Video</Pill>}</div>
               </div>
               <div className="media-body">
                 <input defaultValue={m.altText || ''} placeholder="Alt text" aria-label="Alt text" disabled={!manage} onBlur={(e) => e.target.value !== (m.altText || '') && patch(m, { altText: e.target.value }, 'Alt text saved')} />
@@ -154,7 +149,7 @@ function Media({ p, onChange, manage }) {
                     <button className="icon-btn" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move earlier">←</button>
                     <button className="icon-btn" disabled={i === p.media.length - 1} onClick={() => move(i, 1)} aria-label="Move later">→</button>
                     {m.kind === 'photo' && !m.isPrimary && <button className="btn btn-sm btn-ghost" onClick={() => patch(m, { isPrimary: true }, 'Main photo set')}>Main</button>}
-                    <button className="btn btn-sm btn-ghost" onClick={() => patch(m, { vipOnly: !m.vipOnly }, m.vipOnly ? 'Now public' : 'Now VIP-only')}>{m.vipOnly ? 'Public' : 'VIP'}</button>
+                    <button className="btn btn-sm btn-ghost" title={m.isHidden ? 'Show on the website' : 'Keep it here but don’t show it on the website'} onClick={() => patch(m, { isHidden: !m.isHidden }, m.isHidden ? 'Shown on the website' : 'Hidden from the website')}>{m.isHidden ? 'Show' : 'Hide'}</button>
                     <button className="btn btn-sm btn-danger-ghost" onClick={async () => { const r = await run(() => api.del(`/profiles/${p.id}/media/${m.id}`), 'Removed'); if (r) onChange(r); }}>✕</button>
                   </div>
                 )}
@@ -170,7 +165,6 @@ function Media({ p, onChange, manage }) {
             <Field label="Video link" required hint="YouTube, Vimeo, or https link to an .mp4 / .webm file"><input value={video.url} onChange={(e) => setVideo({ ...video, url: e.target.value })} autoFocus /></Field>
             <Field label="Poster image link (optional)"><input value={video.posterUrl} onChange={(e) => setVideo({ ...video, posterUrl: e.target.value })} /></Field>
             <Field label="Description (alt text)"><input value={video.altText} onChange={(e) => setVideo({ ...video, altText: e.target.value })} /></Field>
-            <Toggle checked={video.vipOnly} onChange={(v) => setVideo({ ...video, vipOnly: v })} label="VIP-only" />
           </div>
         </Modal>
       )}
@@ -287,7 +281,7 @@ function RetireModal({ p, onClose, onDone }) {
     <Modal title={`Retire ${p.displayName}?`} onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button>
       <button className="btn btn-danger" disabled={busy} onClick={async () => { const r = await run(() => api.post(`/profiles/${p.id}/retire`, { redirectTo: to }), 'Profile retired'); if (r) onDone(r); }}>Retire profile</button></>}>
       <div className="stack">
-        <p>The profile leaves the website, collections and the sitemap. Booking history is kept and you can restore it later.</p>
+        <p>The profile leaves the website and the sitemap. Booking history is kept and you can restore it later.</p>
         {p.stats.openBookings > 0 && <div className="banner-error">{p.stats.openBookings} open booking(s) — cancel or reassign them first.</div>}
         <Field label="Send visitors of the old link to (optional)" hint="Without a redirect, the old link shows a “no longer available” page with similar profiles.">
           <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="/locations/makati" />
@@ -318,7 +312,7 @@ export default function ProfileEditor() {
   if (id && existing.loading) return <Loading />;
   if (existing.error) return <ErrorBox error={existing.error} />;
 
-  const body = (f) => ({ ...f, baseLocationId: f.baseLocationId || null, vipTierId: f.vipTierId || null, heightCm: f.heightCm || null, awayUntil: f.awayUntil || null,
+  const body = (f) => ({ ...f, baseLocationId: f.baseLocationId || null, heightCm: f.heightCm || null, awayUntil: f.awayUntil || null,
     attributes: f.attributes.filter((a) => a.label.trim() && a.value.trim()) });
   const save = async () => {
     const r = await submit(() => (id ? api.put(`/profiles/${id}`, body(form)) : api.post('/profiles', body(form))), 'Profile saved');
@@ -342,10 +336,10 @@ export default function ProfileEditor() {
           {p && !p.stats.total && <button type="button" className="btn btn-danger-ghost" onClick={async () => { if (await confirm({ title: `Delete ${p.displayName} permanently?`, message: 'Photos are deleted too. This can’t be undone.', danger: true, confirmLabel: 'Delete' }) && await run(() => api.del(`/profiles/${p.id}`), 'Profile deleted')) navigate('/profiles'); }}>Delete</button>}
           {!retired && ['details', 'visibility'].includes(q.tab) && <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</button>}
         </>}>
-        {p && <div className="row" style={{ marginTop: 8 }}><Pill>{p.status}</Pill>{checklist.map(([ok, label]) => <Pill key={label} tone={ok ? 'green' : 'amber'}>{ok ? '✓' : '•'} {label}</Pill>)}{p.stats.openBookings > 0 && <Link to={`/bookings?profileId=${p.id}&status=Open`}><Pill tone="blue">{p.stats.openBookings} open bookings</Pill></Link>}{p.stats.favorites > 0 && <Pill tone="grey">♥ {p.stats.favorites}</Pill>}</div>}
+        {p && <div className="row" style={{ marginTop: 8 }}><Pill>{p.status}</Pill>{checklist.map(([ok, label]) => <Pill key={label} tone={ok ? 'green' : 'amber'}>{ok ? '✓' : '•'} {label}</Pill>)}{p.stats.openBookings > 0 && <Link to={`/bookings?profileId=${p.id}&status=Open`}><Pill tone="blue">{p.stats.openBookings} open bookings</Pill></Link>}</div>}
       </PageHead>
       {retired && <div className="banner-info">This profile is retired and hidden from the website. Restore it to edit.</div>}
-      <Tabs tabs={[['details', 'Details'], ['visibility', 'Verification, visibility & SEO'], id && ['media', 'Photos & videos', p?.media.length], id && ['rates', 'Rates', p?.rates.length], id && ['availability', 'Availability', p?.schedule.length], id && ['portal', 'Portal access']]} value={q.tab} onChange={(tab) => setQ({ tab })} />
+      <Tabs tabs={[['details', 'Details'], ['visibility', 'Verification, visibility & SEO'], id && ['media', 'Photos & videos', p?.media.length], id && ['rates', 'Rates', p?.rates.length], id && ['availability', 'Availability', p?.schedule.length]]} value={q.tab} onChange={(tab) => setQ({ tab })} />
       <fieldset disabled={!manage || retired} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
         {q.tab === 'details' && <Details form={form} set={set} setForm={setForm} errors={errors} manage={manage} />}
         {q.tab === 'visibility' && <Visibility form={form} set={set} setForm={setForm} errors={errors} profile={p} />}
@@ -353,7 +347,6 @@ export default function ProfileEditor() {
         {q.tab === 'rates' && p && <Rates p={p} onChange={updated} manage={manage && !retired} />}
         {q.tab === 'availability' && p && <Availability p={p} onChange={updated} manage={manage && !retired} />}
       </fieldset>
-      {q.tab === 'portal' && p && <PortalAccess p={p} manage={manage} />}
       {Object.keys(errors).length > 0 && ['media', 'rates', 'availability'].includes(q.tab) && <div className="banner-error">Some details need fixing on the Details or Visibility tab.</div>}
       {retiring && <RetireModal p={p} onClose={() => setRetiring(false)} onDone={(r) => { setRetiring(false); updated(r); setForm(toForm(r)); }} />}
     </div>

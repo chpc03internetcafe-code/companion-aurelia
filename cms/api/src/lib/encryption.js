@@ -8,7 +8,7 @@
 //   so keys can be rotated: put the new key in MESSAGE_ENCRYPTION_KEY and the old one(s) in
 //   MESSAGE_ENCRYPTION_KEYS_OLD (comma separated), then run `npm run db:encrypt-messages` to re-encrypt.
 // - Encrypted values are recognised by their prefix and decrypted in the database layer (db/index.js), so
-//   every reader (CMS, portals, exports) gets plain text; rows written before encryption still read as-is.
+//   every reader (CMS, website, exports) gets plain text; rows written before encryption still read as-is.
 //
 // The key (32 random bytes, base64) lives only in the server environment, never in the database or browser:
 //   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"

@@ -6,12 +6,12 @@ import { Field, PageHero } from '../components/Common';
 import { IconChat, IconClock, IconMail, IconPhone } from '../components/Icons';
 
 export default function Contact() {
-  const { site, inquirySubjects, member, toast } = useSite();
-  const [form, setForm] = useState({ name: member?.fullName || '', email: member?.email || '', phone: '', subject: inquirySubjects[0], message: '', website: '' });
+  const { site, inquirySubjects, toast } = useSite();
+  const [form, setForm] = useState({ name: '', email: '', phone: '', subject: inquirySubjects[0], message: '', website: '' });
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(null);
-  useSeo({ title: 'Contact', description: `Contact the ${site.siteName} concierge about bookings, membership or a profile.` });
+  useSeo({ title: 'Contact', description: `Contact the ${site.siteName} concierge about bookings, rates or a profile.` });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const submit = async (e) => {
     e.preventDefault();
@@ -21,7 +21,7 @@ export default function Contact() {
   };
   return (
     <>
-      <PageHero compact kicker="Concierge" title="Contact us" text="Questions about a booking, membership or a profile? We usually reply within a few hours." />
+      <PageHero compact kicker="Concierge" title="Contact us" text="Questions about a booking, rates or a profile? We usually reply within a few hours." />
       <section className="section" style={{ paddingTop: 30 }}>
         <div className="container grid-2" style={{ alignItems: 'start', gridTemplateColumns: '1.3fr 1fr' }}>
           {sent ? (

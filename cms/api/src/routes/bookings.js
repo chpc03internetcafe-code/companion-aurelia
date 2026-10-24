@@ -24,7 +24,6 @@ function filters(query) {
   if (query.status === 'Open') where.push("b.status IN ('Pending','Confirmed')");
   else if (query.status) where.push(`b.status = ${p.add(query.status)}`);
   if (query.profileId) where.push(`b.profile_id = ${p.add(Number(query.profileId))}`);
-  if (query.memberId) where.push(`b.member_id = ${p.add(Number(query.memberId))}`);
   if (query.source) where.push(`b.source = ${p.add(query.source)}`);
   if (isIsoDate(query.from)) where.push(`b.booking_date >= ${p.add(query.from)}`);
   if (isIsoDate(query.to)) where.push(`b.booking_date <= ${p.add(query.to)}`);
@@ -100,7 +99,6 @@ const createSchema = {
   time: { type: 'time' },
   locationId: { type: 'int', min: 1 },
   meetingPlace: { type: 'string', max: 200 },
-  memberId: { type: 'int', min: 1 },
   clientName: { type: 'string', required: true, max: 150, label: 'Client name' },
   clientEmail: { type: 'email', required: true, label: 'Client email' },
   clientPhone: { type: 'phone' },
@@ -223,7 +221,7 @@ router.post('/:id/notes', wrap(async (req, res) => {
   res.json(after);
 }));
 
-// Chat between the client and the companion: staff read it here and can write as the concierge.
+// Chat with the client: staff read it here and reply as the concierge.
 router.post('/:id/messages', wrap(async (req, res) => {
   const b = await detail(idParam(req));
   await sendChat(b, 'Concierge', req.body.body, req.admin.name);

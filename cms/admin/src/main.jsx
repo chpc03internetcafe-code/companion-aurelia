@@ -15,12 +15,8 @@ const Bookings = lazy(() => import('./pages/Bookings'));
 const BookingDetail = lazy(() => import('./pages/BookingDetail'));
 const Profiles = lazy(() => import('./pages/Profiles'));
 const ProfileEditor = lazy(() => import('./pages/ProfileEditor'));
-const ProfileUpdates = lazy(() => import('./pages/ProfileUpdates'));
-const Members = lazy(() => import('./pages/Members'));
-const MemberDetail = lazy(() => import('./pages/MemberDetail'));
 const Locations = lazy(loadLocations);
 const LocationEditor = named(loadLocations, 'LocationEditor');
-const Vip = lazy(() => import('./pages/Vip'));
 const Content = lazy(() => import('./pages/Content'));
 const ContentEditor = lazy(() => import('./pages/ContentEditor'));
 const PostEditor = lazy(() => import('./pages/PostEditor'));
@@ -61,13 +57,9 @@ function App() {
             <Route path="/profiles" element={g('profiles', <Profiles />)} />
             <Route path="/profiles/new" element={g('profiles', <ProfileEditor />, 'manage')} />
             <Route path="/profiles/:id" element={g('profiles', <ProfileEditor />)} />
-            <Route path="/profile-updates" element={g('profiles', <ProfileUpdates />)} />
-            <Route path="/members" element={g('members', <Members />)} />
-            <Route path="/members/:id" element={g('members', <MemberDetail />)} />
             <Route path="/locations" element={g('locations', <Locations />)} />
             <Route path="/locations/new" element={g('locations', <LocationEditor />, 'manage')} />
             <Route path="/locations/:id" element={g('locations', <LocationEditor />)} />
-            <Route path="/vip" element={g('vip', <Vip />)} />
             <Route path="/content" element={g('content', <Content />)} />
             <Route path="/content/pages/new" element={g('content', <ContentEditor />, 'manage')} />
             <Route path="/content/pages/:id" element={g('content', <ContentEditor />)} />

@@ -38,7 +38,7 @@ export default function AuditTrail() {
   const o = opts.data;
   return (
     <>
-      <PageHead title="Audit Trail" subtitle="Who did what and when — every change in the CMS, staff sign-ins, and website events (bookings, sign-ups, membership requests). Read-only."
+      <PageHead title="Audit Trail" subtitle="Who did what and when — every change in the CMS, staff sign-ins, and website events (bookings, contact messages, live chats). Read-only."
         actions={<a className="btn btn-ghost" href={`/api/audit/export${qs(filters)}`}>Export CSV</a>} />
       {o && <Stats items={[
         { label: 'Entries', value: o.stats.total.toLocaleString() },

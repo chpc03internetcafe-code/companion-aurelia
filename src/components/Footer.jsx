@@ -42,9 +42,6 @@ export default function Footer() {
             <h2>Clients</h2>
             <ul>
               <li><Link to="/booking-status">Check or change a booking</Link></li>
-              <li><Link to="/vip">VIP membership</Link></li>
-              <li><Link to="/account">Member sign-in</Link></li>
-              <li><Link to="/companion">Companion portal</Link></li>
               <li><Link to="/guides">Guides & news</Link></li>
               <li><Link to="/faq">FAQ</Link></li>
               <li><Link to="/contact">Contact</Link></li>

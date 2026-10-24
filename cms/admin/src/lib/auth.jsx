@@ -12,8 +12,6 @@ export const MODULE_PATHS = {
   bookings: '/bookings',
   profiles: '/profiles',
   locations: '/locations',
-  members: '/members',
-  vip: '/vip',
   content: '/content',
   seo: '/seo',
   inquiries: '/inquiries',
@@ -24,7 +22,6 @@ export const MODULE_PATHS = {
 export const moduleForPath = (pathname) => {
   const first = `/${pathname.split('/')[1] || ''}`;
   if (first === '/roles') return 'users';
-  if (first === '/profile-updates') return 'profiles';
   if (first === '/live-chat') return 'inquiries';
   return Object.entries(MODULE_PATHS).find(([, p]) => p === first)?.[0] || null;
 };

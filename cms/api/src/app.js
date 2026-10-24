@@ -14,7 +14,6 @@ import { cached, clearCacheOnWrite } from './lib/cache.js';
 import { blockCrossSite, checkProductionConfig, corsOptions, isProduction, LONG_POLL_PATHS, loggableError, requestLimit, safeJsonReviver, securityHeaders, trustProxySetting } from './lib/security.js';
 import { idleMinutes, loadSettings } from './services/settings.js';
 import { BOOKING_SOURCES, BOOKING_STATUSES, CONTACT_METHODS, INQUIRY_STATUSES as PROFILE_INQUIRY_STATUSES } from './services/bookings.js';
-import { MEMBER_PAYMENT_METHODS, MEMBERSHIP_KINDS, MEMBERSHIP_STATUSES } from './services/members.js';
 import { SORTS } from './services/profiles.js';
 import adminRoutes from './routes/admin.js';
 import auditRoutes from './routes/audit.js';
@@ -22,17 +21,12 @@ import dashboardRoutes from './routes/dashboard.js';
 import bookingRoutes from './routes/bookings.js';
 import profileRoutes, { PROFILE_STATUSES } from './routes/profiles.js';
 import locationRoutes from './routes/locations.js';
-import memberRoutes from './routes/members.js';
-import vipRoutes from './routes/vip.js';
 import contentRoutes, { SECTION_TYPES } from './routes/content.js';
 import seoRoutes from './routes/seo.js';
 import inquiryRoutes, { INQUIRY_STATUSES, INQUIRY_SUBJECTS } from './routes/inquiries.js';
 import settingsRoutes from './routes/settings.js';
 import notificationRoutes from './routes/notifications.js';
 import siteRoutes from './routes/site.js';
-import accountRoutes from './routes/account.js';
-import companionRoutes from './routes/companion.js';
-import companionAdminRoutes from './routes/companions.js';
 import liveChatSiteRoutes from './routes/live-chat-site.js';
 import liveChatRoutes from './routes/live-chat.js';
 
@@ -70,38 +64,32 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/meta', requireAdmin, wrap(async (_req, res) => res.json(await cached('meta', 60_000, meta))));
 
 async function meta() {
-  const [categories, locations, tiers, s] = await Promise.all([
+  const [categories, locations, s] = await Promise.all([
     q('SELECT id, name, slug, is_active FROM categories ORDER BY sort_order, name'),
     q(`SELECT l.id, l.name, l.slug, l.parent_id, l.is_published, pl.name AS parent_name FROM locations l LEFT JOIN locations pl ON pl.id = l.parent_id
        ORDER BY COALESCE(pl.sort_order, l.sort_order), COALESCE(pl.name, l.name), l.parent_id NULLS FIRST, l.name`),
-    q('SELECT id, name, rank, price, duration_days, color, is_active FROM tiers ORDER BY rank, sort_order'),
     loadSettings(),
   ]);
   return {
     site: { siteName: s.siteName, logoText: s.logoText, currency: s.currency || 'PHP', slotMinutes: Number(s.slotMinutes) || 30, idleMinutes: idleMinutes(s).staff },
-    categories, locations, tiers,
+    categories, locations,
     bookingStatuses: BOOKING_STATUSES, profileInquiryStatuses: PROFILE_INQUIRY_STATUSES, bookingSources: BOOKING_SOURCES, contactMethods: CONTACT_METHODS,
-    profileStatuses: PROFILE_STATUSES, membershipStatuses: MEMBERSHIP_STATUSES, membershipKinds: MEMBERSHIP_KINDS, paymentMethods: MEMBER_PAYMENT_METHODS,
+    profileStatuses: PROFILE_STATUSES,
     inquiryStatuses: INQUIRY_STATUSES, inquirySubjects: INQUIRY_SUBJECTS, sectionTypes: SECTION_TYPES, sorts: SORTS,
     websiteUrl: process.env.SITE_URL || 'http://localhost:5173',
   };
 }
 
-// Public: website and member portal
+// Public: website
 app.use('/api/site/chat', liveChatSiteRoutes);
 app.use('/api/site', siteRoutes);
-app.use('/api/account', accountRoutes);
-app.use('/api/companion', companionRoutes);
 
 // CMS: staff sign-in + role permission per section (View for GET, Manage for changes) + audit trail
 app.use('/api/admin', auditWrites('users'), adminRoutes); // sign-in events are logged in the route
 app.use('/api/dashboard', requireAdmin, dashboardRoutes);
 app.use('/api/bookings', requirePermission('bookings'), auditWrites('bookings'), bookingRoutes);
 app.use('/api/profiles', requirePermission('profiles'), auditWrites('profiles'), profileRoutes);
-app.use('/api/companions', requirePermission('profiles'), companionAdminRoutes);
 app.use('/api/locations', requirePermission('locations'), auditWrites('locations'), locationRoutes);
-app.use('/api/members', requirePermission('members'), auditWrites('members'), memberRoutes);
-app.use('/api/vip', requirePermission('vip'), auditWrites('vip'), vipRoutes);
 app.use('/api/content', requirePermission('content'), auditWrites('content'), contentRoutes);
 app.use('/api/seo', requirePermission('seo'), auditWrites('seo'), seoRoutes);
 app.use('/api/inquiries', requirePermission('inquiries'), auditWrites('inquiries'), inquiryRoutes);
@@ -113,10 +101,9 @@ app.use('/api/audit', requirePermission('audit'), auditRoutes);
 app.use('/api', (_req, _res, next) => next(new HttpError(404, 'Not found.')));
 
 // Postgres error codes → friendly API errors.
-// constraint names are uq_<table>_<column>; longest table names first so "member_sessions" wins over "members"
-const UNIQUE_TABLES = ['profile_change_requests', 'companion_accounts', 'companion_sessions', 'companion_tokens', 'collection_profiles', 'member_sessions', 'member_tokens', 'admin_sessions', 'content_pages', 'admin_roles', 'admin_users', 'memberships',
-  'collections', 'categories', 'locations', 'redirects', 'inquiries', 'profiles', 'bookings', 'members', 'tiers', 'posts'];
-const FIELD_LABELS = { email: 'email', slug: 'URL slug', name: 'name', from_path: '“From” path', reference: 'reference', member_no: 'member number', membership_no: 'membership number' };
+// constraint names are uq_<table>_<column>; a longer table name is listed before any name it starts with
+const UNIQUE_TABLES = ['admin_sessions', 'content_pages', 'admin_roles', 'admin_users', 'live_chats', 'categories', 'locations', 'redirects', 'inquiries', 'profiles', 'bookings', 'posts'];
+const FIELD_LABELS = { email: 'email', slug: 'URL slug', name: 'name', from_path: '“From” path', reference: 'reference' };
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
   if (err instanceof multer.MulterError) {
@@ -133,7 +120,7 @@ app.use((err, req, res, _next) => {
   }
   if (err.code === '23503') {
     if (/delete|update/i.test(err.message) && /still referenced/i.test(err.detail || '')) return res.status(409).json({ error: 'This record is still in use and can’t be deleted.' });
-    return res.status(422).json({ error: 'A selected reference (profile, location, tier…) is not valid.' });
+    return res.status(422).json({ error: 'A selected reference (profile, location…) is not valid.' });
   }
   if (err.code === '23514') return res.status(422).json({ error: 'Some values are out of range. Please check the form.' });
   if (err.code === '22P02' || err.code === '22007' || err.code === '22008') return res.status(400).json({ error: 'Some values are in the wrong format.' });

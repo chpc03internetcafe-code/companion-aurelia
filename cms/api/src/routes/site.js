@@ -1,37 +1,34 @@
 // Public website API (no staff sign-in): site info, directory, profile pages, availability, booking requests,
 // booking self-service, location / category / guide pages, redirects, sitemap and the contact form.
 //
-// Clients look up a booking with its reference + the email they used (or by being signed in as the member
-// who made it). Responses never include staff notes. VIP visibility is decided here from the member session.
+// Clients look up a booking with its reference + the email they used. Responses never include staff notes.
 import { Router } from 'express';
 import { one, params, q, run, tx } from '../db/index.js';
 import { clientIp, HttpError, wrap } from '../lib/http.js';
 import { validate } from '../lib/validate.js';
 import { isIsoDate, phDate } from '../lib/dates.js';
-import { rateLimit, sessionMember, throttle } from '../lib/auth.js';
+import { rateLimit, throttle } from '../lib/auth.js';
 import { logEvent } from '../lib/audit.js';
 import { notify } from '../lib/mailer.js';
 import { bookingReceived, bookingToDesk, inquiryReceipt, inquiryToDesk, siteUrl } from '../lib/emails.js';
 import { themeVars } from '../lib/themes.js';
 import { newReference } from '../lib/refs.js';
 import { bookingCancelledNote, bookingNote, bookingRescheduledNote, inquiryNote, notifyStaff } from '../lib/notifications.js';
-import { bookingRules, idleMinutes, loadSettings } from '../services/settings.js';
+import { bookingRules, loadSettings } from '../services/settings.js';
 import { dayAvailability, hoursUntil, openDays } from '../services/availability.js';
 import { CONTACT_METHODS, addEvent, createBooking, loadBooking, loadEvents, moveBooking, publicBooking, quote } from '../services/bookings.js';
 import { cardsByIds, profileDetail, searchProfiles, similarProfiles, SORTS } from '../services/profiles.js';
 import { INQUIRY_SUBJECTS } from './inquiries.js';
-import { emailCompanion } from '../services/companions.js';
 import { chatState, messageCounts, readChat, sendChat } from '../services/chat.js';
 import { cached, PUBLIC_CDN_CACHE } from '../lib/cache.js';
 
 const router = Router();
 const visitor = (name, email) => ({ actorType: 'Visitor', userName: name, userEmail: email });
-const rankOf = async (req) => (await sessionMember(req))?.tierRank || 0;
 
 // ---------- Everything the website needs on load ----------
 const PUBLIC_SETTINGS = ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl',
   'telegramUrl', 'whatsappUrl', 'announcement1', 'announcement2', 'announcement3', 'heroTitle', 'heroText', 'currency', 'ageGateEnabled', 'ageGateText',
-  'bookingPolicy', 'memberPaymentInstructions', 'liveChatEnabled', 'liveChatGreeting', 'seoTitleSuffix', 'seoDefaultDescription', 'seoOgImage', 'structuredData', 'searchIndexing'];
+  'bookingPolicy', 'liveChatEnabled', 'liveChatGreeting', 'seoTitleSuffix', 'seoDefaultDescription', 'seoOgImage', 'structuredData', 'searchIndexing'];
 
 // Same for every visitor, so it's cached on the server and briefly at the CDN.
 router.get('/bootstrap', wrap(async (_req, res) => {
@@ -42,58 +39,54 @@ router.get('/bootstrap', wrap(async (_req, res) => {
 async function bootstrap() {
   const s = await loadSettings();
   const rules = await bookingRules(s);
-  const [categories, locations, tiers, pages, faqs, stats, durations] = await Promise.all([
+  const [categories, locations, pages, faqs, stats, durations] = await Promise.all([
     q(`SELECT c.id, c.name, c.slug, c.description,
-         (SELECT COUNT(*)::int FROM profiles p WHERE p.category_id = c.id AND p.status = 'Published' AND p.vip_tier_id IS NULL) AS profile_count
+         (SELECT COUNT(*)::int FROM profiles p WHERE p.category_id = c.id AND p.status = 'Published') AS profile_count
        FROM categories c WHERE c.is_active ORDER BY c.sort_order, c.name`),
     q(`SELECT l.id, l.parent_id, l.name, l.slug, l.region, l.is_popular, l.image_url, l.image_alt,
          (SELECT COUNT(DISTINCT p.id)::int FROM profiles p LEFT JOIN locations bl ON bl.id = p.base_location_id
-            WHERE p.status = 'Published' AND p.vip_tier_id IS NULL AND (p.base_location_id = l.id OR bl.parent_id = l.id
+            WHERE p.status = 'Published' AND (p.base_location_id = l.id OR bl.parent_id = l.id
               OR EXISTS (SELECT 1 FROM profile_areas a JOIN locations al ON al.id = a.location_id WHERE a.profile_id = p.id AND (al.id = l.id OR al.parent_id = l.id)))) AS profile_count
        FROM locations l WHERE l.is_published ORDER BY l.sort_order, l.name`),
-    q("SELECT id, name, slug, rank, description, price, duration_days, perks, color FROM tiers WHERE is_active AND is_public ORDER BY rank, sort_order"),
     q('SELECT slug, title, kicker, show_in_footer FROM content_pages WHERE is_published ORDER BY sort_order, title'),
     q('SELECT id, group_name, question, answer, show_on_home FROM faqs WHERE is_published ORDER BY sort_order, id'),
-    one(`SELECT COUNT(*)::int AS profiles, COUNT(*) FILTER (WHERE is_verified)::int AS verified FROM profiles WHERE status = 'Published' AND vip_tier_id IS NULL`),
+    one(`SELECT COUNT(*)::int AS profiles, COUNT(*) FILTER (WHERE is_verified)::int AS verified FROM profiles WHERE status = 'Published'`),
     q(`SELECT DISTINCT r.duration_minutes FROM profile_rates r JOIN profiles p ON p.id = r.profile_id WHERE r.is_active AND p.status = 'Published' ORDER BY 1`),
   ]);
   return {
     site: Object.fromEntries(PUBLIC_SETTINGS.map((k) => [k, s[k] || ''])),
-    rules: { leadHours: rules.leadHours, windowDays: rules.windowDays, cancelCutoffHours: rules.cancelCutoffHours, rescheduleLimit: rules.rescheduleLimit, membersOnly: rules.membersOnly, autoConfirm: rules.autoConfirm },
+    rules: { leadHours: rules.leadHours, windowDays: rules.windowDays, cancelCutoffHours: rules.cancelCutoffHours, rescheduleLimit: rules.rescheduleLimit, autoConfirm: rules.autoConfirm },
     theme: { id: s.theme, vars: themeVars(s.theme) },
-    idle: { memberMinutes: idleMinutes(s).member, companionMinutes: idleMinutes(s).companion },
     today: phDate(),
     categories, locations, pages, faqs, stats,
-    tiers: tiers.map((t) => ({ ...t, perks: JSON.parse(t.perks || '[]') })),
     durations: durations.map((d) => d.durationMinutes),
     sorts: SORTS, contactMethods: CONTACT_METHODS, inquirySubjects: INQUIRY_SUBJECTS,
   };
 }
 
-// Cached per VIP rank (what a visitor may see depends only on it).
+// The same for every visitor, so cached on the server.
 router.get('/home', wrap(async (req, res) => {
-  const rank = await rankOf(req);
   res.set('Cache-Control', 'no-store');
-  res.json(await cached(`home:${rank}`, 30_000, () => homeLists(rank)));
+  res.json(await cached('home', 30_000, homeLists));
 }));
 
-async function homeLists(rank) {
+async function homeLists() {
   const [featured, recent, availableToday, posts] = await Promise.all([
-    searchProfiles({ featured: '1' }, { memberRank: rank, pageSize: 8 }),
-    searchProfiles({ sort: 'updated' }, { memberRank: rank, pageSize: 8 }),
-    searchProfiles({ available: 'today', sort: 'active' }, { memberRank: rank, pageSize: 1 }),
-    q(`SELECT slug, kind, title, excerpt, cover_url, cover_alt, audience, published_at FROM posts
-       WHERE is_published AND audience = 'Public' ORDER BY is_pinned DESC, published_at DESC NULLS LAST LIMIT 3`),
+    searchProfiles({ featured: '1' }, { pageSize: 8 }),
+    searchProfiles({ sort: 'updated' }, { pageSize: 8 }),
+    searchProfiles({ available: 'today', sort: 'active' }, { pageSize: 1 }),
+    q(`SELECT slug, kind, title, excerpt, cover_url, cover_alt, published_at FROM posts
+       WHERE is_published ORDER BY is_pinned DESC, published_at DESC NULLS LAST LIMIT 3`),
   ]);
   return { featured: featured.items, recent: recent.items, availableTodayCount: availableToday.total, posts };
 }
 
 // ---------- Directory ----------
-const FILTER_KEYS = ['category', 'location', 'q', 'budgetMin', 'budgetMax', 'duration', 'available', 'verified', 'featured', 'vip', 'sort'];
+const FILTER_KEYS = ['category', 'location', 'q', 'budgetMin', 'budgetMax', 'duration', 'available', 'verified', 'featured', 'sort'];
 
 router.get('/profiles', wrap(async (req, res) => {
   const filters = Object.fromEntries(FILTER_KEYS.filter((k) => req.query[k]).map((k) => [k, String(req.query[k])]));
-  const result = await searchProfiles(filters, { memberRank: await rankOf(req), page: Number(req.query.page) || 1, pageSize: Number(req.query.pageSize) || 24 });
+  const result = await searchProfiles(filters, { page: Number(req.query.page) || 1, pageSize: Number(req.query.pageSize) || 24 });
   res.set('Cache-Control', 'no-store');
   res.json(result);
 }));
@@ -101,31 +94,27 @@ router.get('/profiles', wrap(async (req, res) => {
 // Cards for favourites saved in the browser (guests).
 router.post('/profiles/cards', wrap(async (req, res) => {
   const ids = (Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger).slice(0, 60);
-  res.json(await cardsByIds(ids, await rankOf(req)));
+  res.json(await cardsByIds(ids));
 }));
 
 router.get('/profiles/:slug', wrap(async (req, res) => {
-  const rank = await rankOf(req);
   const slug = String(req.params.slug).slice(0, 120);
-  const detail = await profileDetail(slug, rank);
+  const detail = await profileDetail(slug);
   res.set('Cache-Control', 'no-store');
   if (!detail) throw new HttpError(404, 'Profile not found.');
   if (detail.retired) {
     const redirect = await one('SELECT to_path, status_code FROM redirects WHERE from_path = $1 AND is_active', [`/companions/${slug}`]);
     return res.status(410).json({ retired: true, name: detail.name, redirect: redirect?.toPath || null,
-      similar: await similarProfiles({ categoryId: detail.categoryId, locationId: detail.locationId }, rank, 4) });
+      similar: await similarProfiles({ categoryId: detail.categoryId, locationId: detail.locationId }, 4) });
   }
-  if (detail.vipLocked) return res.status(403).json({ vipLocked: true, name: detail.name, vipTierName: detail.vipTierName });
-  const similar = await similarProfiles({ excludeId: detail.id, categoryId: detail.categoryId, locationId: detail.baseLocationId }, rank, 4);
+  const similar = await similarProfiles({ excludeId: detail.id, categoryId: detail.categoryId, locationId: detail.baseLocationId }, 4);
   res.json({ ...detail, similar });
 }));
 
 // ---------- Availability and quotes ----------
-async function visibleProfile(req, profileId) {
-  const rank = await rankOf(req);
-  const p = await one(`SELECT p.id, p.display_name, p.status, p.booking_enabled, p.vip_tier_id, t.rank AS vip_rank, t.is_active AS vip_active
-    FROM profiles p LEFT JOIN tiers t ON t.id = p.vip_tier_id WHERE p.id = $1`, [profileId]);
-  if (!p || p.status !== 'Published' || (p.vipTierId && !(p.vipActive && p.vipRank <= rank))) throw new HttpError(404, 'Profile not found.');
+async function visibleProfile(profileId) {
+  const p = await one('SELECT id, display_name, status, booking_enabled FROM profiles WHERE id = $1', [profileId]);
+  if (!p || p.status !== 'Published') throw new HttpError(404, 'Profile not found.');
   return p;
 }
 
@@ -143,7 +132,7 @@ async function rateDuration(profileId, rateId) {
 
 router.get('/availability', wrap(async (req, res) => {
   const profileId = Number(req.query.profileId);
-  await visibleProfile(req, profileId);
+  await visibleProfile(profileId);
   if (!isIsoDate(req.query.date)) throw new HttpError(422, 'Choose a date.');
   const r = await dayAvailability({ profileId, durationMinutes: await rateDuration(profileId, Number(req.query.rateId)), date: req.query.date, excludeBookingId: await excludedId(profileId, req.query.exclude) });
   res.set('Cache-Control', 'no-store');
@@ -152,7 +141,7 @@ router.get('/availability', wrap(async (req, res) => {
 
 router.get('/availability/days', wrap(async (req, res) => {
   const profileId = Number(req.query.profileId);
-  await visibleProfile(req, profileId);
+  await visibleProfile(profileId);
   const from = isIsoDate(req.query.from) && req.query.from >= phDate() ? req.query.from : phDate();
   res.set('Cache-Control', 'no-store');
   res.json(await openDays({ profileId, durationMinutes: await rateDuration(profileId, Number(req.query.rateId)), from, days: Math.min(Number(req.query.days) || 14, 31), excludeBookingId: await excludedId(profileId, req.query.exclude) }));
@@ -160,7 +149,7 @@ router.get('/availability/days', wrap(async (req, res) => {
 
 router.post('/quote', wrap(async (req, res) => {
   const profileId = Number(req.body.profileId);
-  await visibleProfile(req, profileId);
+  await visibleProfile(profileId);
   const r = await quote({ one, q }, { profileId, rateId: Number(req.body.rateId), locationId: Number(req.body.locationId) || null });
   res.json({ rateLabel: r.rate.label, durationMinutes: r.rate.durationMinutes, ratePrice: r.ratePrice, fees: r.fees, feesTotal: r.feesTotal, total: r.total });
 }));
@@ -198,9 +187,7 @@ router.post('/bookings', wrap(async (req, res) => {
   }
   await rateLimit(`book:${clientIp(req)}`, 6, 3600000);
   const rules = await bookingRules();
-  const member = await sessionMember(req);
-  if (rules.membersOnly && !member) throw new HttpError(401, 'Please sign in to your member account to send a booking request.', { code: 'members_only' });
-  const profile = await visibleProfile(req, data.profileId);
+  const profile = await visibleProfile(data.profileId);
   if (booking && !profile.bookingEnabled) throw new HttpError(409, 'Online booking is paused for this profile. Please send an inquiry instead.');
   const location = data.locationId ? await one('SELECT id FROM locations WHERE id = $1 AND is_published', [data.locationId]) : null;
 
@@ -213,7 +200,7 @@ router.post('/bookings', wrap(async (req, res) => {
   const created = await tx((db) => createBooking(db, {
     kind: data.kind, profileId: profile.id, rateId: priced?.rate.id, rateLabel: priced?.rate.label, durationMinutes: priced?.rate.durationMinutes,
     date: data.date, time: booking ? data.time : data.date ? data.time : null, locationId: location?.id, meetingPlace: data.meetingPlace,
-    memberId: member?.id, clientName: data.name, clientEmail: data.email, clientPhone: data.phone, preferredContact: data.preferredContact, clientNotes: data.notes,
+    clientName: data.name, clientEmail: data.email, clientPhone: data.phone, preferredContact: data.preferredContact, clientNotes: data.notes,
     ratePrice: priced?.ratePrice, fees: priced?.fees, feesTotal: priced?.feesTotal, total: priced?.total,
     status: booking && rules.autoConfirm ? 'Confirmed' : 'Pending', source: 'Online', bufferMinutes: rules.bufferMinutes,
   }));
@@ -223,14 +210,12 @@ router.post('/bookings', wrap(async (req, res) => {
   await notifyStaff(bookingNote({ ...b, profileName: b.profileName }));
   await logEvent({ action: booking ? 'Booking requested' : 'Inquiry sent', module: 'bookings', entityType: data.kind, entityId: b.id, entityLabel: b.reference,
     summary: `${data.name} ${booking ? `requested ${b.rateLabel} with ${b.profileName} on ${b.bookingDate} ${b.startTime}` : `sent an inquiry about ${b.profileName}`}`,
-    ...(member ? { actorType: 'Member', userName: member.fullName, userEmail: member.email } : visitor(data.name, data.email)) }, req);
+    ...visitor(data.name, data.email) }, req);
   await notify(bookingReceived(site, shaped, data.email));
   if (site.email || process.env.GMAIL_USER) await notify(bookingToDesk(site, { ...shaped, clientEmail: data.email }, site.email || process.env.GMAIL_USER));
-  if (booking && b.status === 'Pending') await emailCompanion(site, b);
   res.status(201).json(shaped);
 }));
 
-// Booking lookup: signed-in member who made it, or reference + matching email.
 // Reference + email unlock a guest booking. Guessing is limited per IP, checked before the lookup so a
 // correct guess after the limit is refused too. The email comes in the body (POST) or the X-Booking-Email
 // header (GET), never the URL, so it doesn't end up in server or CDN logs.
@@ -239,9 +224,8 @@ const bookingEmail = (req) => req.get('x-booking-email') || '';
 async function ownedBooking(req, email) {
   const limiter = await throttle(`lookup:${clientIp(req)}`, { max: 20 });
   const b = await loadBooking({ one }, 'b.reference', String(req.params.ref || '').trim().toUpperCase().slice(0, 24));
-  const me = await sessionMember(req);
   const okEmail = email && b && b.clientEmail.toLowerCase() === String(email).trim().toLowerCase();
-  if (!b || !(okEmail || (me && me.id === b.memberId))) {
+  if (!b || !okEmail) {
     await limiter.fail();
     throw new HttpError(404, 'We couldn’t find a booking with that reference and email.');
   }
@@ -309,7 +293,7 @@ router.post('/bookings/:ref/reschedule', wrap(async (req, res) => {
   res.json(shaped);
 }));
 
-// Chat with the companion (confirmed bookings). `after` = last message id the page already has.
+// Chat with the concierge (confirmed bookings). `after` = last message id the page already has.
 router.get('/bookings/:ref/messages', wrap(async (req, res) => {
   res.set('Cache-Control', 'no-store');
   res.json(await readChat(await ownedBooking(req, bookingEmail(req)), 'Client', req.query.after));
@@ -331,7 +315,7 @@ router.get('/locations/:slug', wrap(async (req, res) => {
   if (!l) throw new HttpError(404, 'Location not found.');
   const [areas, posts] = await Promise.all([
     q('SELECT id, name, slug FROM locations WHERE parent_id = $1 AND is_published ORDER BY sort_order, name', [l.id]),
-    q("SELECT slug, kind, title, excerpt, cover_url, cover_alt, published_at FROM posts WHERE is_published AND audience = 'Public' AND location_id = $1 ORDER BY published_at DESC LIMIT 3", [l.id]),
+    q("SELECT slug, kind, title, excerpt, cover_url, cover_alt, published_at FROM posts WHERE is_published AND location_id = $1 ORDER BY published_at DESC LIMIT 3", [l.id]),
   ]);
   res.set('Cache-Control', PUBLIC_CDN_CACHE);
   res.json({ ...parseSections(l), areas, posts });
@@ -351,19 +335,16 @@ router.get('/pages/:slug', wrap(async (req, res) => {
   res.json(parseSections(p));
 }));
 
-// Guides, announcements and news. Members-only posts are listed with a lock for everyone else; their body is never sent.
+// Guides, announcements and news.
 // ?page=1&pageSize=12 → { items, total, page, pageSize }
 router.get('/posts', wrap(async (req, res) => {
   const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
   const pageSize = Math.min(48, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 12));
-  const rank = await rankOf(req);
-  const p = params([rank]);
+  const p = params();
   const where = ['ps.is_published'];
   if (['Guide', 'Announcement', 'News'].includes(req.query.kind)) where.push(`ps.kind = ${p.add(req.query.kind)}`);
-  if (req.query.audience === 'Members') where.push("ps.audience = 'Members'");
-  const rows = await q(`SELECT COUNT(*) OVER ()::int AS total_count, ps.slug, ps.kind, ps.title, ps.excerpt, ps.cover_url, ps.cover_alt, ps.audience, ps.is_pinned, ps.published_at, t.name AS tier_name, l.name AS location_name,
-      NOT (ps.audience = 'Public' OR ($1 > 0 AND (t.id IS NULL OR t.rank <= $1))) AS locked
-    FROM posts ps LEFT JOIN tiers t ON t.id = ps.min_tier_id LEFT JOIN locations l ON l.id = ps.location_id
+  const rows = await q(`SELECT COUNT(*) OVER ()::int AS total_count, ps.slug, ps.kind, ps.title, ps.excerpt, ps.cover_url, ps.cover_alt, ps.is_pinned, ps.published_at, l.name AS location_name
+    FROM posts ps LEFT JOIN locations l ON l.id = ps.location_id
     WHERE ${where.join(' AND ')} ORDER BY ps.is_pinned DESC, ps.published_at DESC NULLS LAST
     LIMIT ${p.add(pageSize)} OFFSET ${p.add((page - 1) * pageSize)}`, p.values);
   res.set('Cache-Control', 'no-store');
@@ -371,14 +352,12 @@ router.get('/posts', wrap(async (req, res) => {
 }));
 
 router.get('/posts/:slug', wrap(async (req, res) => {
-  const rank = await rankOf(req);
-  const ps = await one(`SELECT ps.*, t.name AS tier_name, t.rank AS tier_rank, l.name AS location_name, l.slug AS location_slug
-    FROM posts ps LEFT JOIN tiers t ON t.id = ps.min_tier_id LEFT JOIN locations l ON l.id = ps.location_id WHERE ps.slug = $1 AND ps.is_published`, [req.params.slug]);
+  const ps = await one(`SELECT ps.*, l.name AS location_name, l.slug AS location_slug
+    FROM posts ps LEFT JOIN locations l ON l.id = ps.location_id WHERE ps.slug = $1 AND ps.is_published`, [req.params.slug]);
   if (!ps) throw new HttpError(404, 'Article not found.');
-  const locked = ps.audience === 'Members' && !(rank > 0 && (!ps.minTierId || ps.tierRank <= rank));
-  const out = { slug: ps.slug, kind: ps.kind, title: ps.title, excerpt: ps.excerpt, coverUrl: ps.coverUrl, coverAlt: ps.coverAlt, audience: ps.audience,
-    tierName: ps.tierName, locationName: ps.locationName, locationSlug: ps.locationSlug, publishedAt: ps.publishedAt, updatedAt: ps.updatedAt,
-    seoTitle: ps.seoTitle, metaDescription: ps.metaDescription, locked, sections: locked ? [] : JSON.parse(ps.sections || '[]') };
+  const out = { slug: ps.slug, kind: ps.kind, title: ps.title, excerpt: ps.excerpt, coverUrl: ps.coverUrl, coverAlt: ps.coverAlt,
+    locationName: ps.locationName, locationSlug: ps.locationSlug, publishedAt: ps.publishedAt, updatedAt: ps.updatedAt,
+    seoTitle: ps.seoTitle, metaDescription: ps.metaDescription, sections: JSON.parse(ps.sections || '[]') };
   res.set('Cache-Control', 'no-store');
   res.json(out);
 }));
@@ -406,12 +385,12 @@ async function sitemapXml(base) {
   const [cats, locs, profiles, posts, pages] = await Promise.all([
     q('SELECT slug, updated_at FROM categories WHERE is_active'),
     q('SELECT slug, updated_at FROM locations WHERE is_published'),
-    q("SELECT slug, updated_at FROM profiles WHERE status = 'Published' AND vip_tier_id IS NULL"),
-    q("SELECT slug, updated_at FROM posts WHERE is_published AND audience = 'Public'"),
+    q("SELECT slug, updated_at FROM profiles WHERE status = 'Published'"),
+    q('SELECT slug, updated_at FROM posts WHERE is_published'),
     q('SELECT slug, updated_at FROM content_pages WHERE is_published'),
   ]);
   const urls = [
-    ['/', null, '1.0'], ['/companions', null, '0.9'], ['/locations', null, '0.8'], ['/guides', null, '0.6'], ['/faq', null, '0.5'], ['/vip', null, '0.5'], ['/contact', null, '0.4'],
+    ['/', null, '1.0'], ['/companions', null, '0.9'], ['/locations', null, '0.8'], ['/guides', null, '0.6'], ['/faq', null, '0.5'], ['/contact', null, '0.4'],
     ...cats.map((c) => [`/${c.slug}`, c.updatedAt, '0.8']),
     ...locs.map((l) => [`/locations/${l.slug}`, l.updatedAt, '0.8']),
     ...profiles.map((p) => [`/companions/${p.slug}`, p.updatedAt, '0.7']),
@@ -444,11 +423,10 @@ router.post('/inquiries', wrap(async (req, res) => {
   const data = validate(req.body, inquirySchema);
   if (req.body.website) return res.status(201).json({ reference: 'MSG-OK' }); // honeypot
   await rateLimit(`inquiry:${clientIp(req)}`, 5, 3600000);
-  const member = await sessionMember(req);
   const created = await tx(async (db) => {
     const reference = await newReference(db, 'MSG', 'inquiries', 'reference');
-    const row = await db.one('INSERT INTO inquiries (reference, member_id, full_name, email, phone, subject, message) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id',
-      [reference, member?.id || null, data.name, data.email, data.phone, data.subject, data.message]);
+    const row = await db.one('INSERT INTO inquiries (reference, full_name, email, phone, subject, message) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
+      [reference, data.name, data.email, data.phone, data.subject, data.message]);
     return { id: row.id, reference };
   });
   const shape = { ...data, reference: created.reference };

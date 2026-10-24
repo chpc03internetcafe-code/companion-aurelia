@@ -46,12 +46,8 @@ const settingsSchema = {
   rescheduleLimit: numberText(0, 10, 'Reschedule limit'),
   slotMinutes: { type: 'enum', values: ['15', '30', '60'] },
   bufferMinutes: numberText(0, 240, 'Buffer'),
-  membersOnlyBooking: flag,
   bookingPolicy: { type: 'string', max: 2000 },
-  memberPaymentInstructions: { type: 'string', max: 1000 },
   staffIdleMinutes: numberText(0, 1440, 'Staff idle sign-out'),
-  companionIdleMinutes: numberText(0, 1440, 'Companion idle sign-out'),
-  memberIdleMinutes: numberText(0, 1440, 'Member idle sign-out'),
 };
 
 const listFees = () => q('SELECT f.*, l.name AS location_name FROM fees f LEFT JOIN locations l ON l.id = f.location_id ORDER BY f.sort_order, f.id');

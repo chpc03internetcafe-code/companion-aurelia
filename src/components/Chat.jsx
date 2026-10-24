@@ -1,4 +1,4 @@
-// Booking chat between the client and the companion (also used in the companion portal).
+// Booking chat between the client and the concierge (on the booking status page).
 // `path` is the API path of the thread (GET to read, POST to send); `extra` is added to both (e.g. the guest's email).
 // New messages are fetched every few seconds while the tab is visible.
 import { useCallback, useEffect, useRef, useState } from 'react';

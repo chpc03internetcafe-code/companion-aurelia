@@ -1,4 +1,4 @@
-// CMS: content pages (About, Terms, Privacy…), posts (guides, announcements, member news) and FAQs.
+// CMS: content pages (About, Terms, Privacy…), posts (guides, announcements, news) and FAQs.
 import { Router } from 'express';
 import { one, q, run } from '../db/index.js';
 import { HttpError, idParam, wrap } from '../lib/http.js';
@@ -87,24 +87,21 @@ const postSchema = {
   excerpt: { type: 'string', max: 400 },
   sections: { type: 'json', required: true, validate: validateSections, label: 'Sections' },
   coverAlt: { type: 'string', max: 200 },
-  audience: { type: 'enum', values: ['Public', 'Members'], default: 'Public' },
-  minTierId: { type: 'int', min: 1 },
   locationId: { type: 'int', min: 1 },
   isPinned: { type: 'bool' },
   isPublished: { type: 'bool' },
   ...SEO,
 };
 
-const listPosts = () => q(`SELECT ps.id, ps.slug, ps.kind, ps.title, ps.excerpt, ps.audience, ps.is_pinned, ps.is_published, ps.published_at, ps.updated_at, ps.cover_url,
-    ps.meta_description, t.name AS tier_name, l.name AS location_name
-  FROM posts ps LEFT JOIN tiers t ON t.id = ps.min_tier_id LEFT JOIN locations l ON l.id = ps.location_id ORDER BY ps.is_pinned DESC, COALESCE(ps.published_at, ps.created_at) DESC`);
+const listPosts = () => q(`SELECT ps.id, ps.slug, ps.kind, ps.title, ps.excerpt, ps.is_pinned, ps.is_published, ps.published_at, ps.updated_at, ps.cover_url,
+    ps.meta_description, l.name AS location_name
+  FROM posts ps LEFT JOIN locations l ON l.id = ps.location_id ORDER BY ps.is_pinned DESC, COALESCE(ps.published_at, ps.created_at) DESC`);
 
 router.get('/posts', wrap(async (_req, res) => res.json(await listPosts())));
 router.get('/posts/:id', wrap(async (req, res) => res.json(parse(await getRow('posts', idParam(req), 'Post')))));
 router.post('/posts', wrap(async (req, res) => {
   const data = validate(req.body, postSchema);
   data.slug ||= slugify(data.title);
-  if (data.audience === 'Public') data.minTierId = null;
   const id = await insertRow('posts', postSchema, data, data.isPublished ? { published_at: new Date() } : {});
   res.status(201).json(parse(await getRow('posts', id)));
 }));
@@ -113,7 +110,6 @@ router.put('/posts/:id', wrap(async (req, res) => {
   const before = await getRow('posts', id, 'Post');
   const data = validate(req.body, postSchema);
   data.slug ||= slugify(data.title);
-  if (data.audience === 'Public') data.minTierId = null;
   await updateRow('posts', postSchema, id, data, { extra: data.isPublished && !before.publishedAt ? { published_at: new Date() } : {} });
   if (before.slug !== data.slug && before.isPublished) {
     await run(`INSERT INTO redirects (from_path, to_path, note) VALUES ($1, $2, 'Article URL changed')

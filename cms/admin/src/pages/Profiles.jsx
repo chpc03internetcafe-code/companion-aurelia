@@ -28,7 +28,6 @@ export default function Profiles() {
         { label: 'Drafts', value: s.drafts, onClick: () => setQ({ status: 'Draft', flag: '' }), active: q.status === 'Draft' },
         { label: 'Hidden', value: s.hidden, onClick: () => setQ({ status: 'Hidden', flag: '' }), active: q.status === 'Hidden' },
         { label: 'Verified', value: `${s.verified}/${s.published}`, sub: 'of published' },
-        { label: 'VIP profiles', value: s.vip, onClick: () => setQ({ flag: 'vip', status: '' }), active: q.flag === 'vip' },
         { label: 'Retired', value: s.retired, onClick: () => setQ({ status: 'Retired', flag: '' }), active: q.status === 'Retired' },
       ]} />}
       <div className="card">
@@ -37,7 +36,7 @@ export default function Profiles() {
           <select value={q.status} onChange={(e) => setQ({ status: e.target.value })} aria-label="Status"><option value="">Active profiles</option>{meta.profileStatuses.map((x) => <option key={x}>{x}</option>)}<option value="all">All, incl. retired</option></select>
           <select value={q.categoryId} onChange={(e) => setQ({ categoryId: e.target.value })} aria-label="Category"><option value="">All categories</option>{meta.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
           <select value={q.locationId} onChange={(e) => setQ({ locationId: e.target.value })} aria-label="Location"><option value="">All locations</option>{meta.locations.map((l) => <option key={l.id} value={l.id}>{l.parentId ? `— ${l.name}` : l.name}</option>)}</select>
-          <select value={q.flag} onChange={(e) => setQ({ flag: e.target.value })} aria-label="Flag"><option value="">Any</option><option value="featured">Featured</option><option value="unverified">Not verified</option><option value="vip">VIP-only</option><option value="incomplete">Incomplete (no photo, rate, availability or description)</option></select>
+          <select value={q.flag} onChange={(e) => setQ({ flag: e.target.value })} aria-label="Flag"><option value="">Any</option><option value="featured">Featured</option><option value="unverified">Not verified</option><option value="incomplete">Incomplete (no photo, rate, availability or description)</option></select>
           <select value={q.sort} onChange={(e) => setQ({ sort: e.target.value })} aria-label="Sort"><option value="">Website order</option><option value="name">Name</option><option value="updated">Recently updated</option><option value="newest">Newest</option></select>
         </div>
         <ErrorBox error={error} onRetry={reload} />
@@ -48,7 +47,7 @@ export default function Profiles() {
               <tbody>{data.items.map((p) => (
                 <tr key={p.id} className="clickable" onClick={() => navigate(`/profiles/${p.id}`)}>
                   <td><div className="row" style={{ flexWrap: 'nowrap' }}><Thumb src={p.photoUrl} name={p.displayName} />
-                    <div><strong>{p.displayName}</strong>, {p.age} {p.isVerified && <Pill tone="green">Verified</Pill>} {p.vipTierName && <Pill tone="violet">{p.vipTierName}</Pill>}
+                    <div><strong>{p.displayName}</strong>, {p.age} {p.isVerified && <Pill tone="green">Verified</Pill>}
                       <span className="sub">{p.categoryName} · updated {day(p.updatedAt)}{p.openBookings ? ` · ${p.openBookings} open booking(s)` : ''}</span></div></div></td>
                   <td>{p.locationName || <span className="muted">—</span>}</td>
                   <td className="hide-sm">{p.rateCount ? <>from {money(p.priceFrom, true)}<span className="sub">{p.rateCount} rate(s)</span></> : <Pill tone="amber">No rates</Pill>}</td>

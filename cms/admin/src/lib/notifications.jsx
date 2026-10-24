@@ -1,4 +1,4 @@
-// Live staff notifications (booking requests, cancellations, membership requests, messages, new members).
+// Live staff notifications (booking requests, cancellations, booking chat, contact messages, live chat).
 //
 // Keeps one long-poll request open to GET /api/notifications/wait; the API answers within ~2 s of a
 // new notification (or after ~20 s with nothing) and the loop asks again. New ones show as a pop-up
@@ -10,8 +10,8 @@ import { api } from './api';
 import { useAuth } from './auth';
 
 const NotificationsContext = createContext(null);
-export const NOTIFY_MODULES = ['bookings', 'profiles', 'members', 'inquiries'];
-export const MODULE_ICONS = { bookings: '📅', profiles: '✦', members: '♛', inquiries: '✉' };
+export const NOTIFY_MODULES = ['bookings', 'inquiries'];
+export const MODULE_ICONS = { bookings: '📅', inquiries: '✉' };
 const BELL_SIZE = 15;
 const POP_MS = 8000;
 const SOUND_KEY = 'cms-notification-sound';

@@ -3,7 +3,7 @@
 // applies them to <html> when it loads.
 //
 //   primary*   brand colour: buttons, links, highlights;  primarySoft = tinted panels;  onPrimary = text on buttons
-//   accent     secondary highlight (badges, "VIP" ribbons)
+//   accent     secondary highlight (badges, ribbons)
 //   ink        header / footer surface
 //   bg/bgAlt   page backgrounds;  surface/surface2 = cards and inputs
 //   text/muted body text;  line = borders

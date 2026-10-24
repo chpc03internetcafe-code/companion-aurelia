@@ -15,7 +15,7 @@ const READ_KEY = 'aurelia-chat-read';
 const RETRY_MS = 5000;
 
 export default function LiveChat() {
-  const { site, member, ageOk, toast } = useSite();
+  const { site, ageOk, toast } = useSite();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(() => new URLSearchParams(window.location.search).get('chat') === 'open');
   const [active, setActiveState] = useState(() => !!store.get(ACTIVE_KEY, false));
@@ -83,14 +83,13 @@ export default function LiveChat() {
   useEffect(() => { if (open && latest > readId) setReadId(latest); }, [open, latest, readId]);
   const unread = open ? 0 : messages.filter((m) => m.from !== 'me' && m.id > readId).length;
 
-  const inPortal = pathname === '/companion' || pathname.startsWith('/companion/'); // the companion portal, not /companions
-  const hidden = site.liveChatEnabled !== '1' || inPortal || (site.ageGateEnabled === '1' && !ageOk);
+  const hidden = site.liveChatEnabled !== '1' || (site.ageGateEnabled === '1' && !ageOk);
   if (hidden) return null;
 
   return (
     <>
       {open && (
-        <ChatWindow thread={thread} member={member} greeting={site.liveChatGreeting} pathname={pathname} toast={toast}
+        <ChatWindow thread={thread} greeting={site.liveChatGreeting} pathname={pathname} toast={toast}
           onClose={() => setOpen(false)}
           onStarted={(r) => { merge(r, true); setActive(true); }}
           onSent={(r) => merge(r)}
@@ -106,7 +105,7 @@ export default function LiveChat() {
   );
 }
 
-function ChatWindow({ thread, member, greeting, pathname, toast, onClose, onStarted, onSent, onForget }) {
+function ChatWindow({ thread, greeting, pathname, toast, onClose, onStarted, onSent, onForget }) {
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const [text, setText] = useState('');
@@ -152,7 +151,7 @@ function ChatWindow({ thread, member, greeting, pathname, toast, onClose, onStar
 
       {!thread ? <div className="lc-body"><p className="muted lc-center">Loading…</p></div>
         : thread.error ? <div className="lc-body"><p className="muted lc-center">The chat couldn’t be loaded. Please try again later.</p></div>
-        : !chat ? <StartForm member={member} greeting={greeting} pathname={pathname} inputRef={inputRef} toast={toast} onStarted={onStarted} />
+        : !chat ? <StartForm greeting={greeting} pathname={pathname} inputRef={inputRef} toast={toast} onStarted={onStarted} />
         : (
           <>
             <div className="lc-body lc-list" ref={listRef} aria-live="polite">
@@ -184,7 +183,7 @@ function ChatWindow({ thread, member, greeting, pathname, toast, onClose, onStar
   );
 }
 
-function StartForm({ member, greeting, pathname, inputRef, toast, onStarted }) {
+function StartForm({ greeting, pathname, inputRef, toast, onStarted }) {
   const [form, setForm] = useState({ name: '', email: '', message: '', website: '' });
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
@@ -204,16 +203,10 @@ function StartForm({ member, greeting, pathname, inputRef, toast, onStarted }) {
   return (
     <form className="lc-body lc-start" onSubmit={submit} noValidate>
       {greeting && <div className="chat-msg"><div className="chat-bubble">{greeting}</div></div>}
-      {member ? (
-        <p className="muted lc-as">Chatting as <strong>{member.fullName}</strong></p>
-      ) : (
-        <>
-          <Field label="Your name" error={errors.name} required><input ref={inputRef} className="input" value={form.name} onChange={set('name')} maxLength={150} autoComplete="name" /></Field>
-          <Field label="Email (optional)" error={errors.email} hint="So we can let you know if you leave before we reply"><input className="input" type="email" value={form.email} onChange={set('email')} maxLength={254} autoComplete="email" /></Field>
-        </>
-      )}
+      <Field label="Your name" error={errors.name} required><input ref={inputRef} className="input" value={form.name} onChange={set('name')} maxLength={150} autoComplete="name" /></Field>
+      <Field label="Email (optional)" error={errors.email} hint="So we can let you know if you leave before we reply"><input className="input" type="email" value={form.email} onChange={set('email')} maxLength={254} autoComplete="email" /></Field>
       <Field label="Message" error={errors.message} required>
-        <textarea ref={member ? inputRef : undefined} className="input" rows={3} maxLength={2000} value={form.message} onChange={set('message')} />
+        <textarea className="input" rows={3} maxLength={2000} value={form.message} onChange={set('message')} />
       </Field>
       <label className="honeypot" aria-hidden="true">Website <input tabIndex={-1} autoComplete="off" value={form.website} onChange={set('website')} /></label>
       <button className="btn btn-primary" disabled={busy || !form.message.trim()}>{busy ? 'Starting…' : 'Start chat'}</button>

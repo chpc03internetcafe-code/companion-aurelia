@@ -1,11 +1,9 @@
-// Everything the website shares: site info, categories, locations, tiers, pages and FAQs (one /site/bootstrap call),
-// the signed-in member, favourites (in the browser for guests, in the account for members), toasts and the
-// adults-only notice.
+// Everything the website shares: site info, categories, locations, pages and FAQs (one /site/bootstrap call),
+// favourites (saved in the browser), toasts and the adults-only notice.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api, store } from '../utils/api';
 import { applyTheme } from '../utils/theme';
 import { setCurrency } from '../utils/format';
-import { IdleWarning, markActive, useIdleTimeout } from '../components/IdleTimeout';
 
 const SiteContext = createContext(null);
 const REFRESH_AFTER_MS = 60_000;
@@ -16,11 +14,8 @@ export function SiteProvider({ children }) {
   const [data, setData] = useState(null);
   const [status, setStatus] = useState('loading');
   const [error, setError] = useState('');
-  const [member, setMember] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
   const [toasts, setToasts] = useState([]);
-  const [localFavs, setLocalFavs] = useState(() => store.get(FAV_KEY, []));
-  const [memberFavs, setMemberFavs] = useState([]);
+  const [favorites, setFavorites] = useState(() => store.get(FAV_KEY, []));
   const [ageOk, setAgeOk] = useState(() => store.get(AGE_KEY, false));
   const loadedAt = useRef(0);
 
@@ -51,62 +46,15 @@ export function SiteProvider({ children }) {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3800);
   }, []);
 
-  // ----- member session -----
-  const syncFavorites = useCallback(async () => {
-    const local = store.get(FAV_KEY, []);
-    const r = local.length ? await api('POST', '/account/me/favorites/merge', { ids: local }) : await api('GET', '/account/me/favorites');
-    setMemberFavs(r.ids);
-    if (local.length) { store.set(FAV_KEY, []); setLocalFavs([]); }
-  }, []);
-
-  const refreshMember = useCallback(async () => {
-    try {
-      const { user } = await api('GET', '/account/session');
-      setMember(user);
-      if (user) await syncFavorites().catch(() => {});
-      return user;
-    } catch {
-      setMember(null);
-      return null;
-    } finally {
-      setAuthReady(true);
-    }
-  }, [syncFavorites]);
-  useEffect(() => { refreshMember(); }, [refreshMember]);
-
-  const signedIn = useCallback(async (user, message) => {
-    markActive();
-    setMember(user);
-    await syncFavorites().catch(() => {});
-    if (message) toast(message);
-  }, [syncFavorites, toast]);
-  const signOut = async (message) => {
-    await api('POST', '/account/logout').catch(() => {});
-    setMember(null);
-    setMemberFavs([]);
-    toast(message);
-  };
-  const logout = () => signOut('You have been signed out');
-  const idleSignOut = () => signOut('You were signed out after a period of inactivity');
-  const idleLeft = useIdleTimeout(member ? data?.idle?.memberMinutes : 0, idleSignOut);
-
-  // ----- favourites -----
-  const favorites = member ? memberFavs : localFavs;
+  // ----- favourites (this browser only) -----
   const isFavorite = useCallback((id) => favorites.includes(id), [favorites]);
-  const toggleFavorite = useCallback(async (id, name) => {
+  const toggleFavorite = useCallback((id, name) => {
     const on = !favorites.includes(id);
-    if (member) {
-      try {
-        const r = await api(on ? 'PUT' : 'DELETE', `/account/me/favorites/${id}`);
-        setMemberFavs(r.ids);
-      } catch (e) { toast(e.message, 'error'); return; }
-    } else {
-      const next = on ? [id, ...localFavs] : localFavs.filter((x) => x !== id);
-      setLocalFavs(next);
-      store.set(FAV_KEY, next);
-    }
+    const next = on ? [id, ...favorites] : favorites.filter((x) => x !== id);
+    setFavorites(next);
+    store.set(FAV_KEY, next);
     toast(on ? `${name || 'Profile'} saved to favourites` : `${name || 'Profile'} removed from favourites`);
-  }, [favorites, member, localFavs, toast]);
+  }, [favorites, toast]);
 
   const confirmAge = () => { store.set(AGE_KEY, true); setAgeOk(true); };
 
@@ -120,12 +68,11 @@ export function SiteProvider({ children }) {
       getLocation: (slug) => data.locations.find((l) => l.slug === slug),
       getCategory: (slug) => data.categories.find((c) => c.slug === slug),
       refresh: () => load({ silent: true }),
-      member, authReady, signedIn, logout, refreshMember, setMember,
       favorites, isFavorite, toggleFavorite,
       ageOk, confirmAge,
       toast, toasts,
     };
-  }, [data, load, member, authReady, signedIn, refreshMember, favorites, isFavorite, toggleFavorite, ageOk, toast, toasts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [data, load, favorites, isFavorite, toggleFavorite, ageOk, toast, toasts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (status === 'loading' && !data) {
     return <div className="boot"><span className="spinner" aria-hidden="true" /><p className="muted">Loading…</p></div>;
@@ -141,10 +88,7 @@ export function SiteProvider({ children }) {
     );
   }
   return (
-    <SiteContext.Provider value={value}>
-      {children}
-      <IdleWarning seconds={idleLeft} onSignOut={logout} />
-    </SiteContext.Provider>
+    <SiteContext.Provider value={value}>{children}</SiteContext.Provider>
   );
 }
 

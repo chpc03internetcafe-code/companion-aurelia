@@ -1,4 +1,4 @@
-// Guides, announcements and member news. Members-only articles show a lock for everyone else.
+// Guides, announcements and news.
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
@@ -6,10 +6,9 @@ import { api, qs } from '../utils/api';
 import { breadcrumbLd, useSeo } from '../utils/seo';
 import { day } from '../utils/format';
 import { Empty, PageHero, PageSkeleton, PostsSkeleton, Sections } from '../components/Common';
-import { IconCrown, IconLock } from '../components/Icons';
 import NotFound from './NotFound';
 
-const KINDS = [['', 'All'], ['Guide', 'Guides'], ['Announcement', 'Announcements'], ['News', 'Member news']];
+const KINDS = [['', 'All'], ['Guide', 'Guides'], ['Announcement', 'Announcements'], ['News', 'News']];
 
 export function PostCard({ p }) {
   return (
@@ -19,7 +18,6 @@ export function PostCard({ p }) {
         <span className="kicker" style={{ margin: 0 }}>{p.kind} · {day(p.publishedAt)}{p.locationName ? ` · ${p.locationName}` : ''}</span>
         <h3>{p.title}</h3>
         <p>{p.excerpt}</p>
-        {p.audience === 'Members' && <span className="vip-chip" style={{ alignSelf: 'flex-start', marginTop: 'auto' }}>{p.locked ? <IconLock size={12} /> : <IconCrown size={12} />}{p.tierName ? `${p.tierName} members` : 'Members only'}</span>}
       </div>
     </Link>
   );
@@ -28,7 +26,6 @@ export function PostCard({ p }) {
 export default function Guides() {
   const [params, setParams] = useSearchParams();
   const kind = params.get('kind') || '';
-  const { member } = useSite();
   // 12 articles at a time; "Load more" appends the next page.
   const [list, setList] = useState(null);
   const [more, setMore] = useState(false);
@@ -39,12 +36,12 @@ export default function Guides() {
       .catch(() => setList((prev) => prev || { items: [], total: 0, page: 1, pageSize: 12 }))
       .finally(() => setMore(false));
   };
-  useEffect(() => { setList(null); load(1); }, [kind, member?.tierRank]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setList(null); load(1); }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
   const posts = list?.items;
   useSeo({ title: 'Guides & announcements', description: 'City guides, booking tips, etiquette and announcements.', jsonLd: breadcrumbLd([['Home', '/'], ['Guides', '/guides']]) });
   return (
     <>
-      <PageHero compact crumbs={[['Home', '/'], ['Guides']]} kicker="Journal" title="Guides & announcements" text="City guides, booking tips and news — plus exclusive articles for members." />
+      <PageHero compact crumbs={[['Home', '/'], ['Guides']]} kicker="Journal" title="Guides & announcements" text="City guides, booking tips and news from the concierge." />
       <section className="section" style={{ paddingTop: 30 }}>
         <div className="container">
           <div className="chip-row" style={{ marginBottom: 24 }}>
@@ -65,19 +62,19 @@ export default function Guides() {
 
 export function GuidePage() {
   const { slug } = useParams();
-  const { member, site } = useSite();
+  const { site } = useSite();
   const [state, setState] = useState({ loading: true });
   useEffect(() => {
     setState({ loading: true });
     api('GET', `/site/posts/${slug}`).then((p) => setState({ p })).catch((e) => setState({ error: e.status || 500 }));
-  }, [slug, member?.tierRank]);
+  }, [slug]);
   const p = state.p;
   useSeo(p ? {
-    title: p.seoTitle || p.title, description: p.metaDescription || p.excerpt, image: p.coverUrl, type: 'article', noindex: p.audience === 'Members',
-    jsonLd: p.audience === 'Public' ? [
+    title: p.seoTitle || p.title, description: p.metaDescription || p.excerpt, image: p.coverUrl, type: 'article',
+    jsonLd: [
       { '@type': 'Article', headline: p.title, description: p.excerpt || undefined, datePublished: p.publishedAt, dateModified: p.updatedAt, image: p.coverUrl ? new URL(p.coverUrl, window.location.origin).href : undefined, publisher: { '@type': 'Organization', name: site.siteName } },
       breadcrumbLd([['Home', '/'], ['Guides', '/guides'], [p.title, `/guides/${p.slug}`]]),
-    ] : null,
+    ],
   } : { title: 'Article', noindex: true });
   if (state.loading) return <PageSkeleton />;
   if (state.error === 404) return <NotFound />;
@@ -90,13 +87,7 @@ export function GuidePage() {
       <section className="section" style={{ paddingTop: 36 }}>
         <div className="narrow">
           {p.coverUrl && <img src={p.coverUrl} alt={p.coverAlt || ''} decoding="async" fetchpriority="high" style={{ borderRadius: 22, marginBottom: 30, width: '100%' }} />}
-          {p.locked ? (
-            <div className="locked-box" style={{ padding: 26 }}>
-              <IconLock size={32} style={{ color: 'var(--primary)', flex: 'none' }} />
-              <div style={{ flex: 1 }}><strong style={{ fontFamily: 'var(--serif)', fontSize: '1.4rem' }}>For {p.tierName || 'VIP'} members</strong><p className="muted" style={{ margin: 0 }}>{member ? 'Upgrade your membership to read this article.' : 'Sign in with an active membership to read this article.'}</p></div>
-              <Link to={member ? '/account/membership' : '/vip'} className="btn btn-primary">{member ? 'Upgrade' : 'Join VIP'}</Link>
-            </div>
-          ) : <Sections sections={p.sections} />}
+          <Sections sections={p.sections} />
           <p style={{ marginTop: 36 }}><Link to="/guides" className="btn btn-ghost">← All articles</Link></p>
         </div>
       </section>

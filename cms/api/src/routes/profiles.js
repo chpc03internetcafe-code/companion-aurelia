@@ -32,7 +32,6 @@ const schema = {
   status: { type: 'enum', values: ['Draft', 'Published', 'Hidden'], default: 'Draft' },
   isFeatured: { type: 'bool' },
   verificationNotes: { type: 'string', max: 1000 },
-  vipTierId: { type: 'int', min: 1 },
   bookingEnabled: { type: 'bool', default: true },
   awayUntil: { type: 'date' },
   awayNote: { type: 'string', max: 200 },
@@ -43,15 +42,15 @@ const schema = {
 const COLS = Object.keys(schema).map((k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`));
 
 const LIST = `
-  SELECT p.id, p.slug, p.display_name, p.age, p.status, p.is_featured, p.is_verified, p.age_verified_at, p.vip_tier_id, p.booking_enabled, p.away_until,
-         p.updated_at, p.published_at, p.last_active_at, c.name AS category_name, l.name AS location_name, t.name AS vip_tier_name,
+  SELECT p.id, p.slug, p.display_name, p.age, p.status, p.is_featured, p.is_verified, p.age_verified_at, p.booking_enabled, p.away_until,
+         p.updated_at, p.published_at, p.last_active_at, c.name AS category_name, l.name AS location_name,
          (SELECT url FROM profile_media m WHERE m.profile_id = p.id AND m.kind = 'photo' ORDER BY m.is_primary DESC, m.sort_order, m.id LIMIT 1) AS photo_url,
          (SELECT COUNT(*)::int FROM profile_media m WHERE m.profile_id = p.id) AS media_count,
          (SELECT COUNT(*)::int FROM profile_rates r WHERE r.profile_id = p.id AND r.is_active) AS rate_count,
          (SELECT MIN(price) FROM profile_rates r WHERE r.profile_id = p.id AND r.is_active) AS price_from,
          (SELECT COUNT(*)::int FROM profile_schedules s WHERE s.profile_id = p.id) AS schedule_blocks,
          (SELECT COUNT(*)::int FROM bookings b WHERE b.profile_id = p.id AND b.status IN ('Pending','Confirmed') AND (b.booking_date IS NULL OR b.booking_date >= ph_today())) AS open_bookings
-  FROM profiles p JOIN categories c ON c.id = p.category_id LEFT JOIN locations l ON l.id = p.base_location_id LEFT JOIN tiers t ON t.id = p.vip_tier_id`;
+  FROM profiles p JOIN categories c ON c.id = p.category_id LEFT JOIN locations l ON l.id = p.base_location_id`;
 
 router.get('/', wrap(async (req, res) => {
   const { page, pageSize, offset } = paging(req.query, 50);
@@ -66,7 +65,6 @@ router.get('/', wrap(async (req, res) => {
   }
   if (req.query.flag === 'featured') where.push('p.is_featured');
   if (req.query.flag === 'unverified') where.push('NOT p.is_verified');
-  if (req.query.flag === 'vip') where.push('p.vip_tier_id IS NOT NULL');
   if (req.query.flag === 'incomplete') where.push(`(NOT EXISTS (SELECT 1 FROM profile_rates r WHERE r.profile_id = p.id AND r.is_active) OR NOT EXISTS (SELECT 1 FROM profile_schedules s WHERE s.profile_id = p.id)
     OR NOT EXISTS (SELECT 1 FROM profile_media m WHERE m.profile_id = p.id) OR p.meta_description IS NULL)`);
   if (req.query.search) {
@@ -83,11 +81,11 @@ router.get('/', wrap(async (req, res) => {
 router.get('/stats', wrap(async (_req, res) => {
   res.json(await one(`SELECT COUNT(*) FILTER (WHERE status = 'Published')::int AS published, COUNT(*) FILTER (WHERE status = 'Draft')::int AS drafts,
     COUNT(*) FILTER (WHERE status = 'Hidden')::int AS hidden, COUNT(*) FILTER (WHERE status = 'Retired')::int AS retired,
-    COUNT(*) FILTER (WHERE status = 'Published' AND is_verified)::int AS verified, COUNT(*) FILTER (WHERE status = 'Published' AND vip_tier_id IS NOT NULL)::int AS vip
+    COUNT(*) FILTER (WHERE status = 'Published' AND is_verified)::int AS verified
     FROM profiles`));
 }));
 
-// Pickers (bookings, collections): profiles with their active rates.
+// Picker for staff bookings: profiles with their active rates.
 router.get('/options', wrap(async (_req, res) => {
   const rows = await q(`SELECT p.id, p.display_name, p.slug, p.status, c.name AS category_name, l.name AS location_name,
       COALESCE((SELECT json_agg(json_build_object('id', r.id, 'label', r.label, 'durationMinutes', r.duration_minutes, 'price', r.price) ORDER BY r.sort_order, r.duration_minutes)
@@ -107,8 +105,7 @@ async function detail(id) {
     q("SELECT id, weekday, to_char(start_time, 'HH24:MI') AS start, CASE WHEN end_time = '24:00' THEN '24:00' ELSE to_char(end_time, 'HH24:MI') END AS end FROM profile_schedules WHERE profile_id = $1 ORDER BY weekday, start_time", [id]),
     q('SELECT * FROM profile_time_off WHERE profile_id = $1 ORDER BY start_date DESC', [id]),
     one(`SELECT COUNT(*) FILTER (WHERE status IN ('Pending','Confirmed') AND (booking_date IS NULL OR booking_date >= ph_today()))::int AS open_bookings,
-      COUNT(*) FILTER (WHERE status = 'Completed')::int AS completed, COUNT(*)::int AS total,
-      (SELECT COUNT(*)::int FROM member_favorites f WHERE f.profile_id = $1) AS favorites FROM bookings WHERE profile_id = $1`, [id]),
+      COUNT(*) FILTER (WHERE status = 'Completed')::int AS completed, COUNT(*)::int AS total FROM bookings WHERE profile_id = $1`, [id]),
   ]);
   return { ...p, attributes: JSON.parse(p.attributes || '[]'), areaIds: areas.map((a) => a.locationId), media, rates, schedule, timeOff, stats, ageVerified: !!p.ageVerifiedAt };
 }
@@ -251,13 +248,12 @@ router.post('/:id/media', upload.array('photos', 12), wrap(async (req, res) => {
   const p = await detail(id);
   if (!req.files?.length) throw new HttpError(422, 'Choose one or more photos (JPG, PNG or WEBP, up to 4 MB each).');
   if (p.media.length + req.files.length > 40) throw new HttpError(422, 'Up to 40 photos and videos per profile.');
-  const vipOnly = req.body.vipOnly === 'true';
   let order = p.media.length;
-  const hasPrimary = p.media.some((m) => m.isPrimary && m.kind === 'photo' && !m.vipOnly);
+  const hasPrimary = p.media.some((m) => m.isPrimary && m.kind === 'photo' && !m.isHidden);
   for (const [i, f] of req.files.entries()) {
     const saved = await saveImage(f.buffer, `profiles/${id}`);
-    await run('INSERT INTO profile_media (profile_id, kind, url, file_name, alt_text, is_primary, vip_only, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-      [id, 'photo', saved.url, saved.fileName, `${p.displayName} — photo ${order + 1}`, !hasPrimary && !vipOnly && i === 0, vipOnly, order++]);
+    await run('INSERT INTO profile_media (profile_id, kind, url, file_name, alt_text, is_primary, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+      [id, 'photo', saved.url, saved.fileName, `${p.displayName} — photo ${order + 1}`, !hasPrimary && i === 0, order++]);
   }
   await run('UPDATE profiles SET updated_at = now() WHERE id = $1', [id]);
   res.status(201).json(await detail(id));
@@ -271,10 +267,9 @@ router.post('/:id/video', wrap(async (req, res) => {
     url: { type: 'string', required: true, max: 500, pattern: VIDEO_URL, patternMessage: 'Paste a YouTube or Vimeo link, or an https link to an .mp4/.webm file.' },
     posterUrl: { type: 'string', max: 500, pattern: /^https?:\/\/\S+$|^\/uploads\/\S+$/, patternMessage: 'Enter an image link.' },
     altText: { type: 'string', max: 200 },
-    vipOnly: { type: 'bool' },
   });
-  await run('INSERT INTO profile_media (profile_id, kind, url, poster_url, alt_text, vip_only, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7)',
-    [id, 'video', d.url, d.posterUrl, d.altText || `${p.displayName} — video`, d.vipOnly, p.media.length]);
+  await run('INSERT INTO profile_media (profile_id, kind, url, poster_url, alt_text, sort_order) VALUES ($1, $2, $3, $4, $5, $6)',
+    [id, 'video', d.url, d.posterUrl, d.altText || `${p.displayName} — video`, p.media.length]);
   await run('UPDATE profiles SET updated_at = now() WHERE id = $1', [id]);
   res.status(201).json(await detail(id));
 }));
@@ -286,18 +281,18 @@ router.put('/:id/media', wrap(async (req, res) => {
   res.json(await detail(id));
 }));
 
-// body: { altText?, vipOnly?, isPrimary? }
+// body: { altText?, isHidden?, isPrimary? } — hidden photos and videos stay in the CMS but aren't shown on the website
 router.patch('/:id/media/:mediaId', wrap(async (req, res) => {
   const id = idParam(req);
   const mid = idParam(req, 'mediaId');
   const m = await one('SELECT * FROM profile_media WHERE id = $1 AND profile_id = $2', [mid, id]);
   if (!m) throw new HttpError(404, 'Media not found.');
-  const d = validate(req.body, { altText: { type: 'string', max: 200 }, vipOnly: { type: 'bool' }, isPrimary: { type: 'bool' } }, { partial: true });
+  const d = validate(req.body, { altText: { type: 'string', max: 200 }, isHidden: { type: 'bool' }, isPrimary: { type: 'bool' } }, { partial: true });
   if ('altText' in d) await run('UPDATE profile_media SET alt_text = $1 WHERE id = $2', [d.altText, mid]);
-  if ('vipOnly' in d) await run('UPDATE profile_media SET vip_only = $1, is_primary = CASE WHEN $1 THEN FALSE ELSE is_primary END WHERE id = $2', [d.vipOnly, mid]);
+  if ('isHidden' in d) await run('UPDATE profile_media SET is_hidden = $1, is_primary = CASE WHEN $1 THEN FALSE ELSE is_primary END WHERE id = $2', [d.isHidden, mid]);
   if (d.isPrimary) {
     if (m.kind !== 'photo') throw new HttpError(422, 'Only a photo can be the main picture.');
-    await run('UPDATE profile_media SET is_primary = (id = $1), vip_only = CASE WHEN id = $1 THEN FALSE ELSE vip_only END WHERE profile_id = $2', [mid, id]);
+    await run('UPDATE profile_media SET is_primary = (id = $1), is_hidden = CASE WHEN id = $1 THEN FALSE ELSE is_hidden END WHERE profile_id = $2', [mid, id]);
   }
   await run('UPDATE profiles SET updated_at = now() WHERE id = $1', [id]);
   res.json(await detail(id));

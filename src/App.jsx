@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import AgeGate from './components/AgeGate';
@@ -20,9 +20,6 @@ const Locations = lazy(loadLocations);
 const LocationPage = named(loadLocations, 'LocationPage');
 const Guides = lazy(loadGuides);
 const GuidePage = named(loadGuides, 'GuidePage');
-const Vip = lazy(() => import('./pages/Vip'));
-const Account = lazy(() => import('./pages/Account'));
-const Companion = lazy(() => import('./pages/Companion'));
 const Favorites = lazy(() => import('./pages/Favorites'));
 const FAQ = lazy(() => import('./pages/FAQ'));
 const Contact = lazy(() => import('./pages/Contact'));
@@ -49,13 +46,8 @@ export default function App() {
             <Route path="/locations/:slug" element={<LocationPage />} />
             <Route path="/guides" element={<Guides />} />
             <Route path="/guides/:slug" element={<GuidePage />} />
-            <Route path="/vip" element={<Vip />} />
-            <Route path="/account" element={<Account />} />
-            <Route path="/account/:tab" element={<Account />} />
-            <Route path="/account/:tab/:slug" element={<Account />} />
-            <Route path="/companion" element={<Companion />} />
-            <Route path="/companion/:tab" element={<Companion />} />
-            <Route path="/companion/:tab/:ref" element={<Companion />} />
+            {/* the member account, VIP and companion portal pages were removed; old links go to the homepage */}
+            {['/vip', '/account/*', '/companion/*'].map((path) => <Route key={path} path={path} element={<Navigate to="/" replace />} />)}
             <Route path="/favorites" element={<Favorites />} />
             <Route path="/faq" element={<FAQ />} />
             <Route path="/contact" element={<Contact />} />

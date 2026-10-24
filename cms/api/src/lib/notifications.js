@@ -1,4 +1,4 @@
-// Staff notifications for website activity (booking requests, cancellations, membership requests, messages).
+// Staff notifications for website activity (booking requests, cancellations, booking chat, contact messages, live chat).
 //
 // - notifyStaff() stores one notification. Each belongs to a CMS module and is shown only to staff
 //   whose role can view that module. Read state is per staff member (notification_reads).
@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import { params, q, run } from '../db/index.js';
 import { longDate, time12 } from './dates.js';
 
-export const NOTIFICATION_MODULES = ['bookings', 'profiles', 'members', 'inquiries'];
+export const NOTIFICATION_MODULES = ['bookings', 'inquiries'];
 const KEEP_DAYS = 90;
 
 export const bus = new EventEmitter();
@@ -47,32 +47,11 @@ export const bookingRescheduledNote = (b) => ({
   title: `Booking ${b.reference} rescheduled by the client`,
   body: `${b.clientName} · ${b.profileName} · now ${when(b)}`,
 });
-// Companion portal: answers to booking requests and profile updates waiting for review.
-export const companionAnsweredNote = (b, accepted, reason) => ({
-  type: accepted ? 'booking_accepted' : 'booking_declined', module: 'bookings', link: `/bookings/${b.id}`,
-  title: `${b.profileName} ${accepted ? 'accepted' : 'declined'} ${b.reference}`,
-  body: `${b.clientName} · ${b.rateLabel || ''} · ${when(b)}${reason ? ` · “${reason}”` : ''}`,
-});
-export const profileChangeNote = (p, what) => ({
-  type: 'profile_change', module: 'profiles', link: '/profile-updates',
-  title: `${p.displayName} sent ${what} for review`,
-  body: 'Approve or reject it under Profiles → Profile updates.',
-});
 
 export const inquiryNote = (i) => ({
   type: 'inquiry_received', module: 'inquiries', link: `/inquiries?search=${encodeURIComponent(i.reference)}`,
   title: `New message ${i.reference}`,
   body: `${i.name} · ${i.subject}`,
-});
-export const memberRegisteredNote = (m) => ({
-  type: 'member_registered', module: 'members', link: `/members/${m.id}`,
-  title: `New member: ${m.fullName}`,
-  body: `${m.email} confirmed their email (${m.memberNo}).`,
-});
-export const membershipRequestNote = (ms) => ({
-  type: 'membership_requested', module: 'members', link: `/members/${ms.memberId}`,
-  title: `${ms.kind} request ${ms.membershipNo}`,
-  body: `${ms.memberName} asked for ${ms.tierName}${ms.paymentReference ? ` · payment ref ${ms.paymentReference}` : ''}.`,
 });
 
 // ---------- Reading (per staff member) ----------

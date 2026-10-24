@@ -9,7 +9,7 @@ export default function FAQ() {
   const [q, setQ] = useState('');
   const shown = useMemo(() => faqs.filter((f) => !q || `${f.question} ${f.answer}`.toLowerCase().includes(q.toLowerCase())), [faqs, q]);
   const groups = [...new Set(shown.map((f) => f.groupName))];
-  useSeo({ title: 'Frequently asked questions', description: 'Answers about booking, verification, membership and privacy.', jsonLd: [faqLd(faqs), breadcrumbLd([['Home', '/'], ['FAQ', '/faq']])] });
+  useSeo({ title: 'Frequently asked questions', description: 'Answers about booking, verification and privacy.', jsonLd: [faqLd(faqs), breadcrumbLd([['Home', '/'], ['FAQ', '/faq']])] });
   return (
     <>
       <PageHero compact crumbs={[['Home', '/'], ['FAQ']]} kicker="Help" title="Frequently asked questions">

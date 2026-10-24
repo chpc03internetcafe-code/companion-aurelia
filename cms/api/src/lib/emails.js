@@ -150,93 +150,6 @@ export function inquiryToDesk(site, i, to) {
   };
 }
 
-// ---------- Member accounts ----------
-export function verifyEmail(site, { name, email, url }) {
-  return {
-    to: email,
-    subject: `Confirm your email — ${site.siteName}`,
-    html: layout(site, {
-      heading: 'Confirm your email',
-      intro: `Hi ${esc(firstName(name))}, please confirm your email to open your member account, where you can manage bookings, keep favourites and request VIP membership.`,
-      cta: { label: 'Confirm my email', url },
-      footnote: 'This link works once and expires in 24 hours. If you didn’t sign up, you can ignore this email.',
-    }),
-    text: text(['Confirm your email to open your member account:', url]),
-  };
-}
-
-export function passwordReset(site, { name, email, url }) {
-  return {
-    to: email,
-    subject: `Reset your password — ${site.siteName}`,
-    html: layout(site, {
-      heading: 'Reset your password',
-      intro: `Hi ${esc(firstName(name))}, use the button below to choose a new password.`,
-      cta: { label: 'Reset password', url },
-      footnote: 'This link works once and expires in 2 hours. If you didn’t ask for this, you can ignore this email.',
-    }),
-    text: text(['Reset your password:', url]),
-  };
-}
-
-export function passwordChanged(site, { name, email }) {
-  return {
-    to: email,
-    subject: `Your password was changed — ${site.siteName}`,
-    html: layout(site, { heading: 'Password changed', intro: `Hi ${esc(firstName(name))}, the password for your member account was just changed and other devices were signed out. If this wasn’t you, contact us right away.` }),
-    text: 'Your member account password was changed. If this was not you, contact us.',
-  };
-}
-
-export function twoStepChanged(site, { name, email, enabled, byStaff = false }) {
-  const what = enabled ? 'turned on' : 'turned off';
-  return {
-    to: email,
-    subject: `Two-step sign-in ${what} — ${site.siteName}`,
-    html: layout(site, {
-      heading: `Two-step sign-in ${what}`,
-      intro: enabled
-        ? `Hi ${esc(firstName(name))}, signing in to your member account now also needs a code from your authenticator app. Keep your backup codes somewhere safe.`
-        : `Hi ${esc(firstName(name))}, two-step sign-in was ${byStaff ? 'reset by our team at your request' : 'turned off'} for your member account, so only your password is needed to sign in. If this wasn’t you, contact us right away.`,
-    }),
-    text: `Two-step sign-in was ${what} for your member account. If this was not you, contact us.`,
-  };
-}
-
-// ---------- Companion portal ----------
-const portalLink = (path = '') => `${siteUrl() || 'http://localhost:5173'}/companion${path}`;
-
-export function companionInvite(site, { name, email, url }) {
-  return {
-    to: email,
-    subject: `Your companion portal access — ${site.siteName}`,
-    html: layout(site, {
-      heading: 'Set up your companion portal',
-      intro: `Hi ${esc(firstName(name))}, our team has given you access to the companion portal. There you can answer booking requests, keep your availability up to date and send profile updates for review.`,
-      cta: { label: 'Choose my password', url },
-      footnote: 'This link works once and expires in 72 hours. If you weren’t expecting this, you can ignore this email.',
-    }),
-    text: text(['Set up your companion portal by choosing a password:', url]),
-  };
-}
-
-// a: { name, email }, b: booking row (SELECT_BOOKING shape)
-export function companionNewRequest(site, a, b) {
-  const pairs = [['Reference', b.reference], ['Session', b.rateLabel], ['Date', b.bookingDate ? `${longDate(b.bookingDate)}, ${time12(b.startTime)}` : 'Not set'],
-    ['Location', [b.locationName, b.meetingPlace].filter(Boolean).join(' — ')]];
-  return {
-    to: a.email,
-    subject: `New booking request ${b.reference} — ${site.siteName}`,
-    html: layout(site, {
-      heading: 'New booking request',
-      intro: `Hi ${esc(firstName(a.name))}, you have a new request. Please accept or decline it in the portal.`,
-      body: rows(pairs),
-      cta: { label: 'Open the companion portal', url: portalLink('/bookings') },
-    }),
-    text: text(['New booking request:', ...pairsText(pairs), '', portalLink('/bookings')]),
-  };
-}
-
 // ---------- Booking chat (no message text in the email, only a link back) ----------
 /** b: SELECT_BOOKING row. Sent for the first unread message, so a conversation doesn't flood the inbox. */
 export function chatMessageToClient(site, b) {
@@ -253,19 +166,6 @@ export function chatMessageToClient(site, b) {
   };
 }
 
-export function chatMessageToCompanion(site, a, b) {
-  return {
-    to: a.email,
-    subject: `New message about booking ${b.reference} — ${site.siteName}`,
-    html: layout(site, {
-      heading: 'You have a new message',
-      intro: `Hi ${esc(firstName(a.name))}, there’s a new message in the chat for booking ${esc(b.reference)}.`,
-      cta: { label: 'Open the companion portal', url: portalLink('/bookings') },
-    }),
-    text: text([`There’s a new message in the chat for booking ${b.reference}.`, portalLink('/bookings')]),
-  };
-}
-
 // Live chat: the visitor left before the concierge answered. The chat opens only in the browser that started it.
 export function liveChatReply(site, c) {
   const url = siteUrl() ? `${siteUrl()}/?chat=open` : null;
@@ -279,80 +179,6 @@ export function liveChatReply(site, c) {
       footnote: 'For your privacy the reply isn’t included in this email. Open the website on the same device and browser you chatted from to read it.',
     }),
     text: text([`Hi ${firstName(c.visitorName)},`, `Our concierge answered your live chat (${c.reference}). Open the website on the same device and browser you chatted from to read it.`, url]),
-  };
-}
-
-export function companionChangeDecided(site, a, { kind, approved, note }) {
-  const what = kind === 'photo' ? 'new photo' : 'profile update';
-  return {
-    to: a.email,
-    subject: `Your ${what} was ${approved ? 'approved' : 'not approved'} — ${site.siteName}`,
-    html: layout(site, {
-      heading: approved ? `Your ${what} is live` : `Your ${what} wasn’t approved`,
-      intro: approved
-        ? `Hi ${esc(firstName(a.name))}, our team approved your ${what} and it now shows on your profile.`
-        : `Hi ${esc(firstName(a.name))}, our team couldn’t approve your ${what} this time.`,
-      body: note ? quote(note) : '',
-      cta: { label: 'Open the companion portal', url: portalLink('/profile') },
-    }),
-    text: text([`Your ${what} was ${approved ? 'approved' : 'not approved'}.`, note || null, portalLink('/profile')]),
-  };
-}
-
-// ---------- Memberships ----------
-// ms: { membershipNo, tierName, kind, amount, startsOn, endsOn, staffNote }
-export function membershipRequested(site, m, ms) {
-  return {
-    to: m.email,
-    subject: `Membership request received — ${ms.membershipNo}`,
-    html: layout(site, {
-      heading: 'We received your membership request',
-      intro: `Hi ${esc(firstName(m.fullName))}, thank you. We’ll activate your ${esc(ms.tierName)} membership as soon as we’ve checked your payment.`,
-      body: rows([['Request', ms.membershipNo], ['Tier', ms.tierName], ['Type', ms.kind], ['Amount', money(ms.amount, site.currency)], ['Payment reference', ms.paymentReference]]),
-      footnote: esc(site.memberPaymentInstructions || ''),
-    }),
-    text: text([`Membership request ${ms.membershipNo} received for ${ms.tierName}.`]),
-  };
-}
-
-export function membershipActivated(site, m, ms) {
-  return {
-    to: m.email,
-    subject: `Your ${ms.tierName} membership is active`,
-    html: layout(site, {
-      heading: `Welcome to ${ms.tierName}`,
-      intro: `Hi ${esc(firstName(m.fullName))}, your membership is now active. VIP collections and members-only content are unlocked in your account.`,
-      body: rows([['Tier', ms.tierName], ['Valid from', longDate(ms.startsOn)], ['Valid until', longDate(ms.endsOn)]]) + (ms.staffNote ? quote(ms.staffNote) : ''),
-      cta: siteUrl() ? { label: 'Open my account', url: `${siteUrl()}/account` } : null,
-    }),
-    text: text([`Your ${ms.tierName} membership is active until ${ms.endsOn}.`]),
-  };
-}
-
-export function membershipRejected(site, m, ms) {
-  return {
-    to: m.email,
-    subject: `About your membership request ${ms.membershipNo}`,
-    html: layout(site, {
-      heading: 'We couldn’t activate your membership',
-      intro: `Hi ${esc(firstName(m.fullName))}, we couldn’t match your request ${esc(ms.membershipNo)} to a payment${ms.staffNote ? '' : '. Please check the reference number or contact us'}.`,
-      body: ms.staffNote ? quote(ms.staffNote) : '',
-      cta: siteUrl() ? { label: 'Open my account', url: `${siteUrl()}/account/membership` } : null,
-    }),
-    text: text([`We couldn't activate membership request ${ms.membershipNo}.`, ms.staffNote]),
-  };
-}
-
-export function renewalReminder(site, m) {
-  return {
-    to: m.email,
-    subject: `Your ${m.tierName} membership ends on ${longDate(m.membershipExpiresOn)}`,
-    html: layout(site, {
-      heading: 'Time to renew',
-      intro: `Hi ${esc(firstName(m.fullName))}, your ${esc(m.tierName)} membership ends on <b>${esc(longDate(m.membershipExpiresOn))}</b>. Renew from your account to keep access to VIP collections and members-only content.`,
-      cta: siteUrl() ? { label: 'Renew my membership', url: `${siteUrl()}/account/membership` } : null,
-    }),
-    text: text([`Your ${m.tierName} membership ends on ${m.membershipExpiresOn}. Renew from your account.`]),
   };
 }
 

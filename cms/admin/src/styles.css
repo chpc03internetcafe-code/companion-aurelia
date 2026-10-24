@@ -496,20 +496,10 @@ button.stat:hover, a.stat:hover { border-color: var(--primary); }
 .day-strip button b { display: block; font-size: 15px; }
 .day-strip button.on { border-color: var(--primary); background: var(--primary-soft); }
 .day-strip button:disabled { opacity: 0.4; cursor: not-allowed; }
-.picker-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 10px; }
-.picker-list label { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
-.picker-list label:last-child { border-bottom: 0; }
-.order-list { display: flex; flex-direction: column; gap: 6px; }
-.order-list > div { display: flex; gap: 10px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .health-group h3 { margin-bottom: 6px; }
 .kv-line { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
 
 /* ---------- Profile updates (companion portal) ---------- */
-.diff-table td { vertical-align: top; white-space: pre-wrap; }
-.diff-table th:first-child { width: 130px; }
-.diff-old { color: var(--muted); }
-.diff-new { background: rgba(76, 195, 138, 0.08); }
-.review-photo { max-width: 260px; max-height: 320px; border-radius: 10px; object-fit: cover; border: 1px solid var(--line); display: block; }
 
 /* ---------- Booking chat (client left, companion right, concierge centred) ---------- */
 .chat-list { display: flex; flex-direction: column; gap: 8px; max-height: 360px; overflow-y: auto; padding: 2px; }

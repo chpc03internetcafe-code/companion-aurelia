@@ -4,7 +4,7 @@ import { MODULE_ICONS, timeAgo, useNotifications } from '../lib/notifications';
 import { dateTime } from '../lib/format';
 import { Empty, Loading, PageHead } from '../components/kit';
 
-const MODULE_LABELS = { bookings: 'Bookings', profiles: 'Profiles', members: 'Members', inquiries: 'Messages' };
+const MODULE_LABELS = { bookings: 'Bookings', inquiries: 'Messages & live chat' };
 
 export default function Notifications() {
   const { open, markAllRead, syncUnread, enabled } = useNotifications();
@@ -24,10 +24,10 @@ export default function Notifications() {
     return () => { window.removeEventListener('cms:notification', on); window.removeEventListener('cms:notifications-read', on); };
   }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!enabled) return <Empty title="No notifications for your role" text="Notifications cover bookings, members and contact messages." />;
+  if (!enabled) return <Empty title="No notifications for your role" text="Notifications cover bookings, contact messages and live chat." />;
   return (
     <>
-      <PageHead title="Notifications" subtitle="Activity from the website: booking requests, cancellations, reschedules, membership requests, messages and new members. Kept for 90 days."
+      <PageHead title="Notifications" subtitle="Activity from the website: booking requests, cancellations, reschedules, booking chat, contact messages and live chats. Kept for 90 days."
         actions={<button className="btn btn-ghost" onClick={markAllRead}>Mark all read</button>} />
       <div className="card">
         <div className="filters">

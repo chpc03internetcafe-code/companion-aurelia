@@ -14,14 +14,11 @@ const NAV = [
     { to: '/', label: 'Dashboard', icon: '◫', always: true, end: true },
     { module: 'bookings', to: '/bookings', label: 'Bookings', icon: '📅', badge: 'bookings' },
     { module: 'profiles', to: '/profiles', label: 'Profiles', icon: '✦' },
-    { module: 'profiles', to: '/profile-updates', label: 'Profile updates', icon: '✎', badge: 'profiles' },
-    { module: 'members', to: '/members', label: 'Members', icon: '♛', badge: 'members' },
     { module: 'inquiries', to: '/live-chat', label: 'Live chat', icon: '💬', badge: 'chat' },
     { module: 'inquiries', to: '/inquiries', label: 'Messages', icon: '✉', badge: 'inquiries' },
   ]],
   ['Website', [
     { module: 'locations', to: '/locations', label: 'Locations & Categories', icon: '⌖' },
-    { module: 'vip', to: '/vip', label: 'VIP Tiers & Collections', icon: '◆' },
     { module: 'content', to: '/content', label: 'Content & FAQs', icon: '📝' },
     { module: 'seo', to: '/seo', label: 'SEO & Redirects', icon: '⤳' },
     { module: 'settings', to: '/settings', label: 'Site Settings', icon: '⚙' },
@@ -56,17 +53,15 @@ export default function Layout() {
     return () => window.removeEventListener('cms:notification', on);
   }, []);
 
-  // Work-queue badges: booking requests to confirm, membership requests to approve, new messages, live chats waiting, profile updates to review.
+  // Work-queue badges: booking requests to confirm, new messages, live chats waiting.
   useEffect(() => {
     const none = Promise.resolve(null);
     Promise.all([
       can('bookings') ? api.get('/bookings/stats') : none,
-      can('members') ? api.get('/members/stats') : none,
       can('inquiries') ? api.get('/inquiries/stats') : none,
-      can('profiles') ? api.get('/companions/changes/stats') : none,
       can('inquiries') ? api.get('/live-chat/stats') : none,
-    ]).then(([b, m, q, pu, lc]) => setBadges({
-      bookings: (b?.pending || 0) + (b?.inquiries || 0), members: m?.pending || 0, inquiries: q?.new || 0, profiles: pu?.pending || 0, chat: lc?.waiting || 0,
+    ]).then(([b, q, lc]) => setBadges({
+      bookings: (b?.pending || 0) + (b?.inquiries || 0), inquiries: q?.new || 0, chat: lc?.waiting || 0,
     })).catch(() => {});
   }, [pathname, can, liveTick]);
   useEffect(() => { setMenuOpen(false); setOpen(false); }, [pathname]);

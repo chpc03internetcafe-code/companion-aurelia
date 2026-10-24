@@ -1,4 +1,4 @@
-// Weekly availability and time off, validated and saved the same way from the CMS and the companion portal.
+// Weekly availability and time off, validated and saved the same way everywhere in the CMS.
 import { HttpError } from '../lib/http.js';
 import { validate } from '../lib/validate.js';
 import { isIsoDate, toMin } from '../lib/dates.js';

@@ -17,7 +17,7 @@ const dayDiff = (a, b) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(
 /** Profile, weekly blocks, time off and bookings for a date range — loaded once for several days. */
 async function loadContext({ profileId, from, to, excludeBookingId = null, db = { q: dbq } }) {
   const [profile] = await db.q(
-    `SELECT id, display_name, status, booking_enabled, away_until, vip_tier_id FROM profiles WHERE id = $1`, [profileId]);
+    `SELECT id, display_name, status, booking_enabled, away_until FROM profiles WHERE id = $1`, [profileId]);
   if (!profile) return null;
   const [schedules, timeOff, bookings] = await Promise.all([
     db.q("SELECT weekday, to_char(start_time, 'HH24:MI') AS start, to_char(end_time, 'HH24:MI') AS end_raw, end_time = '24:00' AS until_midnight FROM profile_schedules WHERE profile_id = $1 ORDER BY weekday, start_time", [profileId]),

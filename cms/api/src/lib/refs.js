@@ -1,4 +1,4 @@
-// Human-friendly reference numbers: BK-261012-4821, MEM-261012-0007, INQ-…, M-000123 …
+// Human-friendly reference numbers: BK-261012-4821, MSG-…, CHAT-…
 import crypto from 'node:crypto';
 import { phStamp } from './dates.js';
 
@@ -15,10 +15,4 @@ export async function newReference(db, prefix, table, column) {
     if (!hit) return ref;
   }
   throw new Error(`Could not generate a unique ${prefix} reference.`);
-}
-
-/** Next sequential member number, e.g. M-000124. */
-export async function nextMemberNo(db) {
-  const row = await db.one("SELECT COALESCE(MAX(CAST(substring(member_no FROM 3) AS INT)), 0) + 1 AS n FROM members WHERE member_no ~ '^M-[0-9]+$'");
-  return `M-${String(row.n).padStart(6, '0')}`;
 }

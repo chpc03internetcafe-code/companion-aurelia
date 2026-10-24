@@ -16,11 +16,9 @@ export const MODULES = [
   ['bookings', 'Bookings & Inquiries'],
   ['profiles', 'Profiles'],
   ['locations', 'Locations & Categories'],
-  ['members', 'Members'],
-  ['vip', 'VIP Tiers & Collections'],
   ['content', 'Content & FAQs'],
   ['seo', 'SEO & Redirects'],
-  ['inquiries', 'Contact Messages'],
+  ['inquiries', 'Contact Messages & Live Chat'],
   ['settings', 'Site Settings'],
   ['users', 'Users & Roles'],
   ['audit', 'Audit Trail'],
@@ -41,18 +39,13 @@ export const DEFAULT_ROLES = [
   },
   {
     name: 'Booking Coordinator',
-    description: 'Handles booking requests, profile inquiries and contact messages; keeps availability up to date.',
-    permissions: only({ bookings: 'manage', inquiries: 'manage', profiles: 'view', members: 'view', locations: 'view' }),
+    description: 'Handles booking requests, profile inquiries, contact messages and live chat; keeps availability up to date.',
+    permissions: only({ bookings: 'manage', inquiries: 'manage', profiles: 'view', locations: 'view' }),
   },
   {
     name: 'Profile Editor',
     description: 'Creates and updates profiles: photos, videos, rates, availability and verification.',
-    permissions: only({ profiles: 'manage', locations: 'view', bookings: 'view', vip: 'view' }),
-  },
-  {
-    name: 'Membership Manager',
-    description: 'Approves and renews VIP memberships, manages tiers and collections.',
-    permissions: only({ members: 'manage', vip: 'manage', profiles: 'view', bookings: 'view', inquiries: 'view' }),
+    permissions: only({ profiles: 'manage', locations: 'view', bookings: 'view' }),
   },
   {
     name: 'Content Editor',
@@ -161,7 +154,7 @@ export const requirePermission = (module) => async (req, _res, next) => {
   }
 };
 
-/** For routes inside one module that need another module too (e.g. booking from a member record). */
+/** For routes inside one module that need another module too (e.g. a booking from a profile). */
 export function assertCan(req, module, level = 'view') {
   if (!can(req.admin.permissions, module, level)) {
     throw new HttpError(403, level === 'view' ? `This needs access to ${label(module)}.` : `This needs permission to change ${label(module)}.`);

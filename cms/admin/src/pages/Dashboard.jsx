@@ -9,7 +9,7 @@ export default function Dashboard() {
   const { user, can } = useAuth();
   const navigate = useNavigate();
   const { data: d, loading, error, reload } = useLoad(() => api.get('/dashboard'), []);
-  useLiveRefresh(['bookings', 'members', 'inquiries'], () => reload(true));
+  useLiveRefresh(['bookings', 'inquiries'], () => reload(true));
   if (loading && !d) return <Loading />;
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   const b = d.bookings;
@@ -22,7 +22,7 @@ export default function Dashboard() {
         b && { label: 'Inquiries to answer', value: b.inquiries, tone: b.inquiries ? 'warn' : '', to: '/bookings?kind=Inquiry&status=Pending&sort=newest' },
         b && { label: 'Confirmed today', value: b.today, to: `/bookings?status=Confirmed&from=${todayIso()}&to=${todayIso()}` },
         b && { label: 'Confirmed next 7 days', value: b.next7 },
-        d.members && { label: 'Membership requests', value: d.members.pending, tone: d.members.pending ? 'warn' : '', to: '/members?tab=requests' },
+        d.liveChat && { label: 'Live chats waiting', value: d.liveChat.waiting, tone: d.liveChat.waiting ? 'warn' : '', to: '/live-chat' },
         d.inquiries && { label: 'New messages', value: d.inquiries.new, tone: d.inquiries.new ? 'warn' : '', to: '/inquiries?status=New' },
       ]} />
       <div className="split">
@@ -53,7 +53,7 @@ export default function Dashboard() {
                     <tr key={x.id} className="clickable" onClick={() => navigate(`/bookings/${x.id}`)}>
                       <td><Pill>{x.kind}</Pill><span className="sub">{x.reference}</span></td>
                       <td><strong>{x.profileName}</strong><span className="sub">{x.bookingDate ? `${day(x.bookingDate)}${x.startTime ? ` ${time12(x.startTime)}` : ''}` : 'No date'}</span></td>
-                      <td>{x.clientName}{x.memberNo && <> <Pill tone="violet">{x.memberNo}</Pill></>}<span className="sub">received {dateTime(x.createdAt)}</span></td>
+                      <td>{x.clientName}<span className="sub">received {dateTime(x.createdAt)}</span></td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -89,15 +89,6 @@ export default function Dashboard() {
               <div className="kv-line"><Link to="/profiles?flag=unverified">Published, not verified</Link><strong>{d.profiles.unverified}</strong></div>
               <div className="kv-line"><span>No availability set</span><strong>{d.profiles.noAvailability}</strong></div>
               <div className="kv-line"><Link to="/profiles?sort=updated">Not updated in 30 days</Link><strong>{d.profiles.stale}</strong></div>
-            </div>
-          )}
-          {d.members && (
-            <div className="card card-pad">
-              <div className="row" style={{ justifyContent: 'space-between', marginBottom: 10 }}><h2>Members</h2><Link to="/members">Manage →</Link></div>
-              <div className="kv-line"><span>Members</span><strong>{d.members.total}</strong></div>
-              <div className="kv-line"><span>Active VIP</span><strong>{d.members.vipActive}</strong></div>
-              <div className="kv-line"><Link to="/members?vip=expiring">Expiring in 14 days</Link><strong>{d.members.expiring}</strong></div>
-              <div className="kv-line"><span>New in 30 days</span><strong>{d.members.new30}</strong></div>
             </div>
           )}
         </div>

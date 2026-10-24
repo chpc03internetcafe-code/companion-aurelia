@@ -643,6 +643,15 @@ CREATE TABLE IF NOT EXISTS live_chat_messages (
 CREATE INDEX IF NOT EXISTS ix_live_chat_messages_chat ON live_chat_messages(chat_id, id);
 CREATE INDEX IF NOT EXISTS ix_live_chat_messages_author ON live_chat_messages(author_id) WHERE author_id IS NOT NULL;
 
+-- ---------- Member, VIP and companion portals (removed) ----------
+-- Their tables (members, memberships, tiers, collections, companion_accounts …) are kept with their data but no
+-- longer used. On an existing database these run once and are no-ops afterwards: VIP-only profiles are hidden
+-- (staff can publish them again), VIP-only photos and videos become hidden media, members-only articles become public.
+ALTER TABLE profile_media ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE; -- kept in the CMS, not shown on the website
+UPDATE profile_media SET is_hidden = TRUE, vip_only = FALSE WHERE vip_only;
+UPDATE profiles SET status = CASE WHEN status = 'Published' THEN 'Hidden' ELSE status END, vip_tier_id = NULL WHERE vip_tier_id IS NOT NULL;
+UPDATE posts SET audience = 'Public', min_tier_id = NULL WHERE audience <> 'Public' OR min_tier_id IS NOT NULL;
+
 -- ---------- Performance indexes ----------
 -- For the busiest filters and sorts (directory, CMS lists, notifications), and for foreign keys whose
 -- ON DELETE would otherwise scan the whole child table.

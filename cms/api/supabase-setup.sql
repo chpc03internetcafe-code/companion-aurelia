@@ -644,6 +644,15 @@ CREATE TABLE IF NOT EXISTS live_chat_messages (
 CREATE INDEX IF NOT EXISTS ix_live_chat_messages_chat ON live_chat_messages(chat_id, id);
 CREATE INDEX IF NOT EXISTS ix_live_chat_messages_author ON live_chat_messages(author_id) WHERE author_id IS NOT NULL;
 
+-- ---------- Member, VIP and companion portals (removed) ----------
+-- Their tables (members, memberships, tiers, collections, companion_accounts …) are kept with their data but no
+-- longer used. On an existing database these run once and are no-ops afterwards: VIP-only profiles are hidden
+-- (staff can publish them again), VIP-only photos and videos become hidden media, members-only articles become public.
+ALTER TABLE profile_media ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE; -- kept in the CMS, not shown on the website
+UPDATE profile_media SET is_hidden = TRUE, vip_only = FALSE WHERE vip_only;
+UPDATE profiles SET status = CASE WHEN status = 'Published' THEN 'Hidden' ELSE status END, vip_tier_id = NULL WHERE vip_tier_id IS NOT NULL;
+UPDATE posts SET audience = 'Public', min_tier_id = NULL WHERE audience <> 'Public' OR min_tier_id IS NOT NULL;
+
 -- ---------- Performance indexes ----------
 -- For the busiest filters and sorts (directory, CMS lists, notifications), and for foreign keys whose
 -- ON DELETE would otherwise scan the whole child table.
@@ -697,12 +706,11 @@ BEGIN
 END $$;
 
 -- Starter staff roles
-INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Administrator', 'Full access to everything, including staff accounts and roles.', '{"bookings":"manage","profiles":"manage","locations":"manage","members":"manage","vip":"manage","content":"manage","seo":"manage","inquiries":"manage","settings":"manage","users":"manage","audit":"manage"}', TRUE) ON CONFLICT (name) DO NOTHING;
-INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Manager', 'Runs the agency day to day. Everything except staff accounts.', '{"bookings":"manage","profiles":"manage","locations":"manage","members":"manage","vip":"manage","content":"manage","seo":"manage","inquiries":"manage","settings":"manage","users":"none","audit":"view"}', FALSE) ON CONFLICT (name) DO NOTHING;
-INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Booking Coordinator', 'Handles booking requests, profile inquiries and contact messages; keeps availability up to date.', '{"bookings":"manage","profiles":"view","locations":"view","members":"view","vip":"none","content":"none","seo":"none","inquiries":"manage","settings":"none","users":"none","audit":"none"}', FALSE) ON CONFLICT (name) DO NOTHING;
-INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Profile Editor', 'Creates and updates profiles: photos, videos, rates, availability and verification.', '{"bookings":"view","profiles":"manage","locations":"view","members":"none","vip":"view","content":"none","seo":"none","inquiries":"none","settings":"none","users":"none","audit":"none"}', FALSE) ON CONFLICT (name) DO NOTHING;
-INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Membership Manager', 'Approves and renews VIP memberships, manages tiers and collections.', '{"bookings":"view","profiles":"view","locations":"none","members":"manage","vip":"manage","content":"none","seo":"none","inquiries":"view","settings":"none","users":"none","audit":"none"}', FALSE) ON CONFLICT (name) DO NOTHING;
-INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Content Editor', 'Looks after the website: location pages, guides, announcements, FAQs, SEO and redirects.', '{"bookings":"none","profiles":"view","locations":"manage","members":"none","vip":"none","content":"manage","seo":"manage","inquiries":"none","settings":"none","users":"none","audit":"none"}', FALSE) ON CONFLICT (name) DO NOTHING;
+INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Administrator', 'Full access to everything, including staff accounts and roles.', '{"bookings":"manage","profiles":"manage","locations":"manage","content":"manage","seo":"manage","inquiries":"manage","settings":"manage","users":"manage","audit":"manage"}', TRUE) ON CONFLICT (name) DO NOTHING;
+INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Manager', 'Runs the agency day to day. Everything except staff accounts.', '{"bookings":"manage","profiles":"manage","locations":"manage","content":"manage","seo":"manage","inquiries":"manage","settings":"manage","users":"none","audit":"view"}', FALSE) ON CONFLICT (name) DO NOTHING;
+INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Booking Coordinator', 'Handles booking requests, profile inquiries, contact messages and live chat; keeps availability up to date.', '{"bookings":"manage","profiles":"view","locations":"view","content":"none","seo":"none","inquiries":"manage","settings":"none","users":"none","audit":"none"}', FALSE) ON CONFLICT (name) DO NOTHING;
+INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Profile Editor', 'Creates and updates profiles: photos, videos, rates, availability and verification.', '{"bookings":"view","profiles":"manage","locations":"view","content":"none","seo":"none","inquiries":"none","settings":"none","users":"none","audit":"none"}', FALSE) ON CONFLICT (name) DO NOTHING;
+INSERT INTO admin_roles (name, description, permissions, is_system) VALUES ('Content Editor', 'Looks after the website: location pages, guides, announcements, FAQs, SEO and redirects.', '{"bookings":"none","profiles":"view","locations":"manage","content":"manage","seo":"manage","inquiries":"none","settings":"none","users":"none","audit":"none"}', FALSE) ON CONFLICT (name) DO NOTHING;
 -- Default site settings
 INSERT INTO site_settings (key, value) VALUES ('siteName', 'Aurelia Companions') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('logoText', 'Aurelia') ON CONFLICT (key) DO NOTHING;
@@ -719,7 +727,7 @@ INSERT INTO site_settings (key, value) VALUES ('telegramUrl', '') ON CONFLICT (k
 INSERT INTO site_settings (key, value) VALUES ('whatsappUrl', '') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('announcement1', 'Every profile is **ID-verified** and adults only (18+)') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('announcement2', 'Book in 2 minutes — **reference number** and live status updates') ON CONFLICT (key) DO NOTHING;
-INSERT INTO site_settings (key, value) VALUES ('announcement3', '**VIP members** get exclusive collections and priority bookings') ON CONFLICT (key) DO NOTHING;
+INSERT INTO site_settings (key, value) VALUES ('announcement3', 'Questions? **Chat with our concierge** — bottom right of every page') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('heroTitle', 'Exceptional company, verified and on your schedule.') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('heroText', 'Browse verified profiles by city and availability, see published rates up front, and send a booking request in minutes.') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('theme', 'noir-gold') ON CONFLICT (key) DO NOTHING;
@@ -733,14 +741,10 @@ INSERT INTO site_settings (key, value) VALUES ('cancelCutoffHours', '24') ON CON
 INSERT INTO site_settings (key, value) VALUES ('rescheduleLimit', '2') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('slotMinutes', '30') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('bufferMinutes', '30') ON CONFLICT (key) DO NOTHING;
-INSERT INTO site_settings (key, value) VALUES ('membersOnlyBooking', '0') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('liveChatEnabled', '1') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('liveChatGreeting', 'Hi! Ask us anything about companions, bookings or VIP membership. Our concierge usually replies within a few minutes during desk hours.') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('bookingPolicy', 'Requests are confirmed by our concierge, usually within an hour during desk hours. You can cancel or reschedule online up to the cut-off shown on your booking. Fees are shown before you confirm and are settled directly as agreed with the concierge.') ON CONFLICT (key) DO NOTHING;
-INSERT INTO site_settings (key, value) VALUES ('memberPaymentInstructions', 'Pay the membership fee to our GCash 0917 000 0000 (Aurelia Concierge) or BDO 0000-1111-2222, then enter the reference number in your request. We activate your membership after checking the payment.') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('staffIdleMinutes', '30') ON CONFLICT (key) DO NOTHING;
-INSERT INTO site_settings (key, value) VALUES ('companionIdleMinutes', '30') ON CONFLICT (key) DO NOTHING;
-INSERT INTO site_settings (key, value) VALUES ('memberIdleMinutes', '60') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('seoTitleSuffix', ' · Aurelia Companions') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('seoDefaultDescription', 'Verified companion directory with published rates, live availability, city guides and online booking requests.') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('seoOgImage', '') ON CONFLICT (key) DO NOTHING;

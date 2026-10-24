@@ -1,9 +1,9 @@
 // Website: the visitor's side of the live chat (/api/site/chat). The chat belongs to the browser that started it
-// (httpOnly cookie); signed-in members' chats are linked to their account.
+// (httpOnly cookie).
 import { Router } from 'express';
 import { clientIp, HttpError, wrap } from '../lib/http.js';
 import { validate } from '../lib/validate.js';
-import { rateLimit, sessionMember } from '../lib/auth.js';
+import { rateLimit } from '../lib/auth.js';
 import { logEvent } from '../lib/audit.js';
 import { longPoll } from '../lib/longpoll.js';
 import { loadSettings } from '../services/settings.js';
@@ -39,12 +39,11 @@ router.get('/wait', wrap(async (req, res) => {
   res.json(r || { chat: publicChat(c), messages: [] });
 }));
 
-// Starts a chat: { name, email?, message, page? }. Signed-in members don't need to give name and email.
+// Starts a chat: { name, email?, message, page? }.
 router.post('/', wrap(async (req, res) => {
   await enabled();
   if (req.body.website) return res.status(201).json({ chat: null, messages: [] }); // honeypot
-  const member = await sessionMember(req);
-  const data = validate(member ? { ...req.body, name: member.fullName, email: member.email } : req.body, {
+  const data = validate(req.body, {
     name: { type: 'string', required: true, max: 150, label: 'Name' },
     email: { type: 'email', label: 'Email' },
     message: { type: 'string', required: true, max: MAX_LENGTH, label: 'Message' },
@@ -53,9 +52,9 @@ router.post('/', wrap(async (req, res) => {
   await rateLimit(`livechat:${clientIp(req)}`, 5, 3600000);
   const old = await visitorChat(req);
   if (old?.status === 'Open') await closeChat(old, 'Visitor');
-  const c = await startChat(req, res, { ...data, page: data.page?.startsWith('/') ? data.page : null, memberId: member?.id });
+  const c = await startChat(req, res, { ...data, page: data.page?.startsWith('/') ? data.page : null });
   await logEvent({ action: 'Live chat started', module: 'inquiries', entityType: 'Live chat', entityId: c.id, entityLabel: c.reference,
-    summary: `${data.name} started a live chat`, actorType: member ? 'Member' : 'Visitor', userName: data.name, userEmail: data.email }, req);
+    summary: `${data.name} started a live chat`, actorType: 'Visitor', userName: data.name, userEmail: data.email }, req);
   res.status(201).json({ ...(await visitorMessages(c, 0)), online: await deskOnline() });
 }));
 

@@ -20,7 +20,7 @@ export const defaultSettings = {
   whatsappUrl: '',
   announcement1: 'Every profile is **ID-verified** and adults only (18+)',
   announcement2: 'Book in 2 minutes — **reference number** and live status updates',
-  announcement3: '**VIP members** get exclusive collections and priority bookings',
+  announcement3: 'Questions? **Chat with our concierge** — bottom right of every page',
   heroTitle: 'Exceptional company, verified and on your schedule.',
   heroText: 'Browse verified profiles by city and availability, see published rates up front, and send a booking request in minutes.',
   theme: DEFAULT_THEME,
@@ -36,16 +36,12 @@ export const defaultSettings = {
   rescheduleLimit: '2',       // online reschedules per booking
   slotMinutes: '30',          // start-time grid
   bufferMinutes: '30',        // gap kept free between two bookings of the same profile
-  membersOnlyBooking: '0',    // 1 = only signed-in members can send booking requests
   // live chat widget on the website (answered in CMS → Live chat)
   liveChatEnabled: '1',
   liveChatGreeting: 'Hi! Ask us anything about companions, bookings or VIP membership. Our concierge usually replies within a few minutes during desk hours.',
   bookingPolicy: 'Requests are confirmed by our concierge, usually within an hour during desk hours. You can cancel or reschedule online up to the cut-off shown on your booking. Fees are shown before you confirm and are settled directly as agreed with the concierge.',
-  memberPaymentInstructions: 'Pay the membership fee to our GCash 0917 000 0000 (Aurelia Concierge) or BDO 0000-1111-2222, then enter the reference number in your request. We activate your membership after checking the payment.',
-  // sign-out after this many minutes without activity (0 = never), per portal
+  // CMS sign-out after this many minutes without activity (0 = never)
   staffIdleMinutes: '30',     // CMS
-  companionIdleMinutes: '30', // companion portal
-  memberIdleMinutes: '60',    // member accounts on the website
   // SEO
   seoTitleSuffix: ' · Aurelia Companions',
   seoDefaultDescription: 'Verified companion directory with published rates, live availability, city guides and online booking requests.',
@@ -70,11 +66,8 @@ export const num = (v, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
-/** Idle sign-out per portal, in minutes (0 = off). */
-export function idleMinutes(s) {
-  const m = (v, fallback) => Math.max(0, Math.round(num(v, fallback)));
-  return { staff: m(s.staffIdleMinutes, 30), companion: m(s.companionIdleMinutes, 30), member: m(s.memberIdleMinutes, 60) };
-}
+/** CMS idle sign-out, in minutes (0 = off). */
+export const idleMinutes = (s) => ({ staff: Math.max(0, Math.round(num(s.staffIdleMinutes, 30))) });
 
 /** The parts of the settings the booking rules use, as numbers/booleans. */
 export async function bookingRules(settings) {
@@ -87,6 +80,5 @@ export async function bookingRules(settings) {
     rescheduleLimit: num(s.rescheduleLimit, 2),
     slotMinutes: [15, 30, 60].includes(num(s.slotMinutes, 30)) ? num(s.slotMinutes, 30) : 30,
     bufferMinutes: num(s.bufferMinutes, 30),
-    membersOnly: s.membersOnlyBooking === '1',
   };
 }

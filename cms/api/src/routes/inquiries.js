@@ -6,10 +6,9 @@ import { validate } from '../lib/validate.js';
 
 const router = Router();
 export const INQUIRY_STATUSES = ['New', 'In Progress', 'Resolved', 'Closed'];
-export const INQUIRY_SUBJECTS = ['General question', 'Booking help', 'VIP membership', 'Rates & payment', 'Join as a companion', 'Profile correction or removal', 'Feedback', 'Others'];
+export const INQUIRY_SUBJECTS = ['General question', 'Booking help', 'Rates & payment', 'Join as a companion', 'Profile correction or removal', 'Feedback', 'Others'];
 
-const SELECT = `SELECT i.*, m.member_no, m.full_name AS member_name
-  FROM inquiries i LEFT JOIN members m ON m.id = i.member_id`;
+const SELECT = 'SELECT i.* FROM inquiries i';
 
 // ?search &status (Open = New + In Progress) &subject
 router.get('/', wrap(async (req, res) => {

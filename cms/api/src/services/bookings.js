@@ -26,14 +26,14 @@ export const round2 = (n) => Math.round(Number(n) * 100) / 100;
 export const SELECT_BOOKING = `
   SELECT b.id, b.reference, b.kind, b.profile_id, b.rate_id, b.rate_label, b.duration_minutes, b.booking_date,
          to_char(b.start_time, 'HH24:MI') AS start_time, to_char(b.ends_at, 'YYYY-MM-DD') AS end_date, to_char(b.ends_at, 'HH24:MI') AS end_time,
-         b.location_id, b.meeting_place, b.member_id, b.client_name, b.client_email, b.client_phone, b.preferred_contact, b.client_notes,
+         b.location_id, b.meeting_place, b.client_name, b.client_email, b.client_phone, b.preferred_contact, b.client_notes,
          b.rate_price, b.fees, b.fees_total, b.total, b.status, b.cancel_reason, b.cancelled_by, b.reschedule_count, b.source, b.staff_notes,
          b.created_at, b.updated_at,
          p.display_name AS profile_name, p.slug AS profile_slug, p.status AS profile_status,
-         (SELECT url FROM profile_media pm WHERE pm.profile_id = p.id AND pm.kind = 'photo' AND NOT pm.vip_only ORDER BY pm.is_primary DESC, pm.sort_order, pm.id LIMIT 1) AS profile_photo,
-         l.name AS location_name, m.member_no, m.full_name AS member_name
+         (SELECT url FROM profile_media pm WHERE pm.profile_id = p.id AND pm.kind = 'photo' AND NOT pm.is_hidden ORDER BY pm.is_primary DESC, pm.sort_order, pm.id LIMIT 1) AS profile_photo,
+         l.name AS location_name
   FROM bookings b JOIN profiles p ON p.id = b.profile_id
-  LEFT JOIN locations l ON l.id = b.location_id LEFT JOIN members m ON m.id = b.member_id`;
+  LEFT JOIN locations l ON l.id = b.location_id`;
 
 export const parseFees = (b) => ({ ...b, fees: typeof b.fees === 'string' ? JSON.parse(b.fees || '[]') : b.fees || [] });
 
@@ -50,7 +50,7 @@ export async function addEvent(db, bookingId, { status = null, title, note = nul
     [bookingId, status, title.slice(0, 150), note ? encryptText(String(note).slice(0, 1000)) : null, actor ? String(actor).slice(0, 150) : null, visible]);
 }
 
-/** What the client sees: no staff notes, internal events or member ids. */
+/** What the client sees: no staff notes or internal events. */
 export function publicBooking(b, events = []) {
   return {
     reference: b.reference, kind: b.kind, status: b.status,
@@ -99,15 +99,15 @@ export async function createBooking(db, d) {
   const reference = await newReference(db, d.kind === 'Inquiry' ? 'INQ' : 'BK', 'bookings', 'reference');
   const row = await db.one(
     `INSERT INTO bookings (reference, kind, profile_id, rate_id, rate_label, duration_minutes, booking_date, start_time, starts_at, ends_at,
-       location_id, meeting_place, member_id, client_name, client_email, client_phone, preferred_contact, client_notes,
+       location_id, meeting_place, client_name, client_email, client_phone, preferred_contact, client_notes,
        rate_price, fees, fees_total, total, status, source, staff_notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8::time,
        CASE WHEN $7::date IS NULL OR $8::time IS NULL THEN NULL ELSE $7::date + $8::time END,
        CASE WHEN $7::date IS NULL OR $8::time IS NULL OR $6::int IS NULL THEN NULL ELSE $7::date + $8::time + make_interval(mins => $6::int) END,
-       $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+       $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
      RETURNING id`,
     [reference, d.kind, d.profileId, d.rateId || null, d.rateLabel || null, d.durationMinutes || null, d.date || null, d.time || null,
-      d.locationId || null, d.meetingPlace || null, d.memberId || null, d.clientName, d.clientEmail, d.clientPhone || null, d.preferredContact || null, encryptText(d.clientNotes || null),
+      d.locationId || null, d.meetingPlace || null, d.clientName, d.clientEmail, d.clientPhone || null, d.preferredContact || null, encryptText(d.clientNotes || null),
       d.ratePrice || 0, JSON.stringify(d.fees || []), d.feesTotal || 0, d.total || 0, d.status, d.source || 'Online', d.staffNotes || null]
   );
   await addEvent(db, row.id, {

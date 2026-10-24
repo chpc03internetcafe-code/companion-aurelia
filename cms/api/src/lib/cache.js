@@ -36,7 +36,7 @@ export function clearCache(prefix) {
 }
 
 // Chat messages change nothing that's cached, and arrive often, so they don't clear it.
-const NO_CLEAR = /^\/api\/(site\/chat|live-chat|site\/bookings\/[^/]+\/messages|companion\/me\/bookings\/[^/]+\/messages)(\/|$)/;
+const NO_CLEAR = /^\/api\/(site\/chat|live-chat|site\/bookings\/[^/]+\/messages)(\/|$)/;
 
 /** Express middleware: clears the cache after any successful write request. */
 export function clearCacheOnWrite(req, res, next) {

@@ -21,8 +21,6 @@ const RESOURCES = {
   bookings: { '': ['bookings', 'Booking'] },
   profiles: { '': ['profiles', 'Profile'] },
   locations: { '': ['locations', 'Location'], categories: ['categories', 'Category'] },
-  members: { '': ['members', 'Member'], memberships: ['memberships', 'Membership'] },
-  vip: { tiers: ['tiers', 'Tier'], collections: ['collections', 'Collection'] },
   content: { pages: ['content_pages', 'Content page'], posts: ['posts', 'Post'], faqs: ['faqs', 'FAQ'] },
   seo: { redirects: ['redirects', 'Redirect'], settings: ['site_settings', 'SEO settings'] },
   settings: { '': ['site_settings', 'Site settings'], fees: ['fees', 'Fee'] },
@@ -32,13 +30,13 @@ const RESOURCES = {
 const SUFFIX_ACTIONS = {
   status: 'Status changed', notes: 'Note added', media: 'Media uploaded', video: 'Video added', password: 'Password reset',
   'password-reset': 'Password reset sent', reschedule: 'Rescheduled', schedule: 'Availability updated', rates: 'Rates updated',
-  'time-off': 'Time off updated', retire: 'Retired', approve: 'Approved', reject: 'Rejected', grant: 'Membership granted',
-  sessions: 'Sessions revoked', profiles: 'Profiles updated', image: 'Image uploaded', cover: 'Cover uploaded', remind: 'Reminders sent',
+  'time-off': 'Time off updated', retire: 'Retired',
+  sessions: 'Sessions revoked', profiles: 'Profiles updated', image: 'Image uploaded', cover: 'Cover uploaded',
 };
 // Writes that don't change anything (previews, test emails) aren't logged.
 const READ_ONLY = new Set(['settings POST email', 'bookings POST quote']);
 
-const LABEL_FIELDS = ['reference', 'membershipNo', 'memberNo', 'displayName', 'fullName', 'name', 'title', 'clientName', 'question', 'fromPath', 'email', 'key'];
+const LABEL_FIELDS = ['reference', 'displayName', 'fullName', 'name', 'title', 'clientName', 'question', 'fromPath', 'email', 'key'];
 export const labelOf = (row) => (row ? LABEL_FIELDS.map((f) => row[f]).find((v) => v != null && v !== '') : null) ?? null;
 
 // Message text is stored encrypted (lib/encryption.js); the audit trail records that it changed, not what it says.

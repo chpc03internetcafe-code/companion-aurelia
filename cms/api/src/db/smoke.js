@@ -6,7 +6,6 @@ import assert from 'node:assert/strict';
 import app from '../app.js';
 import { closeDb, one, q } from './index.js';
 import { addDays, phDate } from '../lib/dates.js';
-import { totpCode } from '../lib/totp.js';
 
 // Each test client gets a random X-Forwarded-For address, as if behind one trusted proxy, so the per-IP
 // limits don't trip during the run.
@@ -51,7 +50,6 @@ async function check(name, fn) {
 }
 
 const guest = client();
-const member = client();
 const staff = client();
 const coordinator = client();
 const today = phDate();
@@ -65,8 +63,25 @@ let slotTime;
 await check('health + bootstrap', async () => {
   assert.equal((await guest('GET', '/health')).data.ok, true);
   const { data } = await guest('GET', '/site/bootstrap');
-  assert.ok(data.categories.length >= 3 && data.locations.length > 5 && data.tiers.length >= 2);
+  assert.ok(data.categories.length >= 3 && data.locations.length > 5);
+  assert.equal(data.tiers, undefined, 'no VIP tiers any more');
   assert.ok(data.theme.vars['--primary']);
+});
+
+await check('staff sign-in', async () => {
+  const login = await staff('POST', '/admin/auth/login', { email: 'admin@aurelia.example', password: 'aurelia2026' });
+  assert.equal(login.status, 200, JSON.stringify(login.data));
+});
+
+await check('removed: member accounts, VIP and the companion portal are gone', async () => {
+  for (const url of ['/account/session', '/companion/session', '/members', '/vip/tiers', '/companions/changes']) {
+    const r = url.startsWith('/account') || url.startsWith('/companion/') ? await guest('GET', url) : await staff('GET', url);
+    assert.equal(r.status, 404, `${url}: ${r.status}`);
+  }
+  const { roles, modules } = (await staff('GET', '/admin/roles')).data;
+  const admin = roles.find((r) => r.name === 'Administrator');
+  assert.ok(!('members' in admin.permissions) && !('vip' in admin.permissions), JSON.stringify(admin.permissions));
+  assert.ok(!modules.some((m) => ['members', 'vip'].includes(m.key ?? m[0])), JSON.stringify(modules));
 });
 
 await check('performance: compressed responses and CDN cache headers', async () => {
@@ -79,7 +94,6 @@ await check('performance: compressed responses and CDN cache headers', async () 
 await check('home: featured, recent, available-today count', async () => {
   const { data } = await guest('GET', '/site/home');
   assert.ok(data.featured.length > 0 && data.recent.length > 0);
-  assert.ok(data.featured.every((p) => !p.vip), 'VIP profiles must not appear for guests');
 });
 
 await check('directory filters: category, location (incl. areas), budget, duration, verified, sort', async () => {
@@ -101,15 +115,18 @@ await check('directory filters: category, location (incl. areas), budget, durati
   assert.ok(date.total >= 0);
 });
 
-await check('profile page hides VIP-only media and VIP profiles from guests', async () => {
+await check('profile page: hidden photos stay off the website; retired profiles point elsewhere', async () => {
   const { data } = await guest('GET', '/site/profiles/sofia');
   assert.equal(data.name, 'Sofia');
-  assert.ok(data.rates.length && data.schedule.length);
-  assert.ok(data.media.every((m) => !m.vipOnly));
-  assert.ok(data.lockedMedia.photos >= 1);
-  const vip = await guest('GET', '/site/profiles/yuna');
-  assert.equal(vip.status, 403);
-  assert.equal(vip.data.vipLocked, true);
+  assert.ok(data.rates.length && data.schedule.length && data.media.length >= 2);
+  // staff hide a photo: it's kept in the CMS but no longer sent to the website
+  const hide = data.media[1];
+  assert.equal((await staff('PATCH', `/profiles/${data.id}/media/${hide.id}`, { isHidden: true })).status, 200);
+  const after = (await guest('GET', '/site/profiles/sofia')).data;
+  assert.ok(!after.media.some((m) => m.id === hide.id) && after.media.length === data.media.length - 1);
+  assert.ok((await staff('GET', `/profiles/${data.id}`)).data.media.find((m) => m.id === hide.id).isHidden);
+  await staff('PATCH', `/profiles/${data.id}/media/${hide.id}`, { isHidden: false });
+  assert.equal((await guest('GET', '/site/profiles/yuna')).status, 200, 'formerly VIP-only profiles are ordinary profiles');
   const retired = await guest('GET', '/site/profiles/lara');
   assert.equal(retired.status, 410);
   assert.equal(retired.data.redirect, '/locations/makati');
@@ -166,65 +183,6 @@ await check('profile inquiry without a date', async () => {
   assert.match(r.data.reference, /^INQ-/);
 });
 
-await check('member sign-up: 18+ check, email confirmation link, session', async () => {
-  const minor = await member('POST', '/account/register', { firstName: 'Young', lastName: 'Person', email: 'young@example.com', birthdate: addDays(today, -365 * 17), password: 'password123', terms: true });
-  assert.equal(minor.status, 422);
-  const common = await member('POST', '/account/register', { firstName: 'Smoke', lastName: 'Member', email: 'smoke.member@example.com', birthdate: '1990-05-05', password: 'password123', terms: true });
-  assert.equal(common.status, 422, 'common passwords are refused');
-  const r = await member('POST', '/account/register', { firstName: 'Smoke', lastName: 'Member', email: 'smoke.member@example.com', birthdate: '1990-05-05', password: 'Velvet-Harbor-42', terms: true });
-  assert.equal(r.status, 201);
-  if (r.data.devLink) {
-    const token = new URL(r.data.devLink).searchParams.get('token');
-    const v = await member('POST', '/account/verify-email', { token });
-    assert.equal(v.status, 200, JSON.stringify(v.data));
-    assert.match(v.data.memberNo, /^M-/);
-    assert.equal((await member('GET', '/account/session')).data.user.email, 'smoke.member@example.com');
-  }
-});
-
-await check('demo member: VIP access, favourites, collections, membership, sessions', async () => {
-  const m = client();
-  const login = await m('POST', '/account/login', { email: 'demo@aurelia.example', password: 'password' });
-  assert.equal(login.status, 200, JSON.stringify(login.data));
-  assert.equal(login.data.vipActive, true);
-  assert.equal((await m('GET', '/site/profiles/yuna')).status, 200, 'Gold member sees a Gold profile');
-  const sofia = (await m('GET', '/site/profiles/sofia')).data;
-  assert.ok(sofia.media.some((x) => x.vipOnly), 'Gold member sees VIP-only photos');
-  const fav = await m('PUT', `/account/me/favorites/${profile.id}`);
-  assert.ok(fav.data.ids.includes(profile.id));
-  const cols = (await m('GET', '/account/me/collections')).data;
-  assert.ok(cols.some((c) => !c.locked));
-  const gold = await m('GET', '/account/me/collections/gold-selection');
-  assert.equal(gold.status, 200);
-  const ms = (await m('GET', '/account/me/membership')).data;
-  assert.equal(ms.current.active, true);
-  assert.ok((await m('GET', '/account/me/sessions')).data.some((s) => s.current));
-  const posts = (await m('GET', '/site/posts?pageSize=48')).data;
-  assert.ok(posts.items.some((p) => p.audience === 'Members' && !p.locked));
-  const guestPosts = (await guest('GET', '/site/posts?pageSize=48')).data;
-  assert.ok(guestPosts.items.filter((p) => p.audience === 'Members').every((p) => p.locked));
-  const page2 = (await guest('GET', '/site/posts?pageSize=1&page=2')).data;
-  assert.equal(page2.items.length, 1);
-  assert.equal(page2.total, guestPosts.total);
-  assert.notEqual(page2.items[0].slug, guestPosts.items[0].slug);
-});
-
-await check('member requests a membership → staff approves → tier active', async () => {
-  const tiers = (await member('GET', '/account/me/membership')).data.tiers;
-  const silver = tiers.find((t) => t.slug === 'silver');
-  const r = await member('POST', '/account/me/membership', { tierId: silver.id, paymentMethod: 'GCash', paymentReference: 'GC123456' });
-  assert.equal(r.status, 201, JSON.stringify(r.data));
-  assert.equal((await member('POST', '/account/me/membership', { tierId: silver.id, paymentMethod: 'GCash', paymentReference: 'GC1' })).status, 409);
-  const login = await staff('POST', '/admin/auth/login', { email: 'admin@aurelia.example', password: 'aurelia2026' });
-  assert.equal(login.status, 200, JSON.stringify(login.data));
-  const queue = (await staff('GET', '/members/memberships')).data;
-  const mine = queue.find((x) => x.membershipNo === r.data.membershipNo);
-  const ok = await staff('POST', `/members/memberships/${mine.id}/approve`, { notify: false });
-  assert.equal(ok.status, 200, JSON.stringify(ok.data));
-  assert.equal(ok.data.vipActive, true);
-  assert.equal((await member('GET', '/account/session')).data.user.vipActive, true);
-});
-
 await check('server cache: a saved setting shows on the website straight away', async () => {
   const before = (await guest('GET', '/site/bootstrap')).data.site.heroTitle; // now cached
   const changed = `${before} (smoke)`;
@@ -235,7 +193,7 @@ await check('server cache: a saved setting shows on the website straight away', 
 });
 
 await check('CMS: lists, dashboard, booking status change with timeline, audit', async () => {
-  for (const url of ['/meta', '/dashboard', '/bookings', '/bookings/stats', '/profiles', '/profiles/options', '/locations', '/locations/categories', '/members', '/vip/tiers', '/vip/collections',
+  for (const url of ['/meta', '/dashboard', '/bookings', '/bookings/stats', '/profiles', '/profiles/options', '/locations', '/locations/categories', '/live-chat',
     '/content/pages', '/content/posts', '/content/faqs', '/seo/redirects', '/seo/health', '/inquiries', '/settings', '/admin/users', '/admin/roles', '/audit', '/notifications']) {
     const r = await staff('GET', url);
     assert.equal(r.status, 200, `${url}: ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
@@ -250,122 +208,26 @@ await check('CMS: lists, dashboard, booking status change with timeline, audit',
   assert.ok(audit.items.some((a) => a.action === 'Status changed'));
 });
 
-await check('two-step sign-in: authenticator setup, code at sign-in, no reuse, backup code, staff reset', async () => {
-  const pw = 'password';
-  const m = client();
-  assert.equal((await m('POST', '/account/login', { email: 'demo@aurelia.example', password: pw })).status, 200);
-  assert.equal((await m('POST', '/account/me/2fa/setup', { password: 'wrong' })).status, 422, 'setup needs the password');
-  const setup = (await m('POST', '/account/me/2fa/setup', { password: pw })).data;
-  assert.match(setup.secret, /^[A-Z2-7]{32}$/);
-  assert.match(setup.otpauthUrl, /^otpauth:\/\/totp\/.+secret=/);
-  assert.match(setup.qr, /^data:image\/png;base64,/);
-  assert.equal((await m('POST', '/account/me/2fa/enable', { code: '000000' })).status, 422);
-  const now = Date.now();
-  const on = await m('POST', '/account/me/2fa/enable', { code: totpCode(setup.secret, now), signOutOthers: false });
-  assert.equal(on.status, 200, JSON.stringify(on.data));
-  assert.equal(on.data.enabled, true);
-  assert.equal(on.data.backupCodes.length, 10);
-  assert.equal((await m('GET', '/account/me/2fa')).data.backupCodesLeft, 10);
-
-  // password alone no longer signs in
-  const fresh = client();
-  const first = await fresh('POST', '/account/login', { email: 'demo@aurelia.example', password: pw });
-  assert.equal(first.data.mfaRequired, true);
-  assert.equal(first.data.email, undefined, 'no account data before the second step');
-  assert.equal((await fresh('GET', '/account/session')).data.user, null);
-  assert.equal((await fresh('POST', '/account/login/2fa', { token: first.data.mfaToken, code: '123456' })).status, 422);
-  // the code used to turn it on can't be replayed in the same 30-second step
-  const replay = await fresh('POST', '/account/login/2fa', { token: first.data.mfaToken, code: totpCode(setup.secret, now) });
-  assert.equal(replay.status, 422, 'used code is refused');
-  const viaBackup = await fresh('POST', '/account/login/2fa', { token: first.data.mfaToken, code: on.data.backupCodes[0].toLowerCase() });
-  assert.equal(viaBackup.status, 200, JSON.stringify(viaBackup.data));
-  assert.equal(viaBackup.data.backupCodesLeft, 9);
-  assert.equal((await fresh('GET', '/account/session')).data.user.email, 'demo@aurelia.example');
-  assert.equal((await fresh('POST', '/account/login/2fa', { token: first.data.mfaToken, code: on.data.backupCodes[1] })).status, 410, 'challenge is single-use');
-  const again = await client()('POST', '/account/login', { email: 'demo@aurelia.example', password: pw });
-  const reuse = await client()('POST', '/account/login/2fa', { token: again.data.mfaToken, code: on.data.backupCodes[0] });
-  assert.equal(reuse.status, 422, 'backup code works once');
-  const leak = await one('SELECT totp_backup_codes FROM members WHERE lower(email) = $1', ['demo@aurelia.example']);
-  assert.ok(!leak.totpBackupCodes.includes(on.data.backupCodes[1]), 'backup codes are stored hashed');
-
-  // staff reset for a lost phone
-  const id = (await one('SELECT id FROM members WHERE lower(email) = $1', ['demo@aurelia.example'])).id;
-  assert.ok((await staff('GET', `/members/${id}`)).data.twoStepSince);
-  const reset = await staff('POST', `/members/${id}/two-step/reset`);
-  assert.equal(reset.status, 200, JSON.stringify(reset.data));
-  assert.equal(reset.data.twoStepSince, null);
-  assert.equal((await fresh('GET', '/account/session')).data.user, null, 'reset signs the member out');
-  const plain = await client()('POST', '/account/login', { email: 'demo@aurelia.example', password: pw });
-  assert.equal(plain.data.email, 'demo@aurelia.example');
-});
-
-await check('companion portal: invite, sign-in, answer requests, availability, profile updates reviewed by staff', async () => {
-  // demo companion signs in and only sees their own requests, without client contact details
-  const c = client();
-  const login = await c('POST', '/companion/login', { email: 'companion@aurelia.example', password: 'password' });
-  assert.equal(login.status, 200, JSON.stringify(login.data));
-  const profileId = login.data.profile.id;
-  assert.equal((await member('GET', '/companion/me')).status, 401, 'member session is not a companion session');
-  const pending = (await c('GET', '/companion/me/bookings?scope=pending')).data;
-  assert.ok(pending.length > 0, 'demo companion has pending requests');
-  assert.ok(pending.every((b) => !('clientEmail' in b) && !('clientPhone' in b) && !b.clientName.includes(' ')), 'no client contact details');
-  const other = await one("SELECT reference FROM bookings WHERE profile_id <> $1 AND kind = 'Booking' AND status = 'Pending' LIMIT 1", [profileId]);
-  assert.equal((await c('POST', `/companion/me/bookings/${other.reference}/accept`)).status, 404, 'can’t answer another profile’s booking');
-
-  const [first, second] = pending;
-  const ok = await c('POST', `/companion/me/bookings/${first.reference}/accept`);
-  assert.equal(ok.status, 200, JSON.stringify(ok.data));
-  assert.equal(ok.data.status, 'Confirmed');
-  assert.equal((await c('POST', `/companion/me/bookings/${first.reference}/decline`)).status, 409, 'already answered');
-  if (second) {
-    const no = await c('POST', `/companion/me/bookings/${second.reference}/decline`, { reason: 'Travelling that week' });
-    assert.equal(no.data.status, 'Declined');
-    const events = await q('SELECT title, note, visible_to_client FROM booking_events e JOIN bookings b ON b.id = e.booking_id WHERE b.reference = $1', [second.reference]);
-    assert.ok(events.some((e) => e.note === 'Travelling that week' && !e.visibleToClient), 'companion’s reason is staff-only');
-  }
-
-  // availability goes live straight away
-  const week = await c('PUT', '/companion/me/schedule', { blocks: [{ weekday: 5, start: '18:00', end: '24:00' }, { weekday: 6, start: '14:00', end: '23:00' }] });
-  assert.equal(week.status, 200, JSON.stringify(week.data));
-  assert.equal(week.data.schedule.length, 2);
-  assert.equal((await c('PUT', '/companion/me/schedule', { blocks: [{ weekday: 1, start: '20:00', end: '19:00' }] })).status, 422);
-  const off = await c('PUT', '/companion/me/time-off', { items: [{ startDate: addDays(today, 30), endDate: addDays(today, 32), note: 'Holiday' }] });
-  assert.equal(off.data.timeOff.length, 1);
-
-  // wording waits for staff; current profile is unchanged until approved
-  const before = await one('SELECT tagline FROM profiles WHERE id = $1', [profileId]);
-  const sent = await c('POST', '/companion/me/profile/details', { ...(await c('GET', '/companion/me/profile')).data.fields, tagline: 'Fresh tagline from the portal' });
+await check('booking chat: client ↔ concierge, unread counts, staff notified, closed for pending bookings', async () => {
+  const b = (await staff('GET', '/bookings?status=Confirmed&kind=Booking')).data.items.find((x) => x.bookingDate >= today);
+  const detail = (await staff('GET', `/bookings/${b.id}`)).data;
+  const email = detail.clientEmail;
+  const sent = await guest('POST', `/site/bookings/${b.reference}/messages`, { email, body: 'Can we move dinner to 8 PM?' });
   assert.equal(sent.status, 201, JSON.stringify(sent.data));
-  assert.equal((await one('SELECT tagline FROM profiles WHERE id = $1', [profileId])).tagline, before.tagline, 'not live before approval');
-  const queue = (await staff('GET', '/companions/changes')).data.items;
-  const mine = queue.find((r) => r.profileId === profileId && r.kind === 'details');
-  assert.deepEqual(mine.data, { tagline: 'Fresh tagline from the portal' });
-  assert.equal(mine.current.tagline, before.tagline);
-  assert.equal((await staff('POST', `/companions/changes/${mine.id}/approve`)).status, 200);
-  assert.equal((await one('SELECT tagline FROM profiles WHERE id = $1', [profileId])).tagline, 'Fresh tagline from the portal');
-  assert.equal((await staff('POST', `/companions/changes/${mine.id}/reject`, { note: 'x' })).status, 409);
-  await coordinator('POST', '/admin/auth/login', { email: 'bookings@aurelia.example', password: 'aurelia2026' });
-  assert.equal((await coordinator('POST', `/companions/profile/${profileId}/invite`, { email: 'x@example.com' })).status, 403, 'needs manage on profiles');
-
-  // invitation flow for another profile
-  const target = await one("SELECT id FROM profiles WHERE status = 'Published' AND id <> $1 ORDER BY id LIMIT 1", [profileId]);
-  const inv = await staff('POST', `/companions/profile/${target.id}/invite`, { email: 'new.companion@example.com' });
-  assert.equal(inv.status, 201, JSON.stringify(inv.data));
-  assert.equal(inv.data.account.status, 'Invited');
-  const token = new URL(inv.data.link).searchParams.get('token');
-  const n = client();
-  assert.equal((await n('POST', '/companion/login', { email: 'new.companion@example.com', password: 'whatever1' })).status, 401, 'invited, no password yet');
-  assert.equal((await n('POST', '/companion/invite/check', { token })).data.email, 'new.companion@example.com');
-  const accepted = await n('POST', '/companion/invite/accept', { token, password: 'companion-pass' });
-  assert.equal(accepted.status, 200, JSON.stringify(accepted.data));
-  assert.equal((await n('POST', '/companion/invite/accept', { token, password: 'companion-pass' })).status, 410, 'invitation works once');
-  assert.equal((await n('GET', '/companion/session')).data.user.profile.id, target.id);
-  // staff pause access → signed out and can't sign in
-  const acct = accepted.data.id;
-  assert.equal((await staff('POST', `/companions/${acct}/status`, { status: 'Suspended' })).data.account.status, 'Suspended');
-  assert.equal((await n('GET', '/companion/session')).data.user, null);
-  assert.equal((await client()('POST', '/companion/login', { email: 'new.companion@example.com', password: 'companion-pass' })).status, 403);
-  assert.equal((await staff('DELETE', `/companions/${acct}`)).status, 204);
+  assert.equal(sent.data.messages.at(-1).from, 'me');
+  const notes = (await staff('GET', '/notifications?unread=1')).data.items;
+  assert.ok(notes.some((n) => n.type === 'booking_message' && n.link === `/bookings/${b.id}` && !n.body.includes('8 PM')), 'staff are notified, without the text');
+  const reply = await staff('POST', `/bookings/${b.id}/messages`, { body: 'Of course — 8 PM it is.' });
+  assert.equal(reply.status, 201);
+  assert.ok(reply.data.chat.messages.some((m) => m.sender === 'Client' && m.body === 'Can we move dinner to 8 PM?'));
+  const look = (await guest('GET', `/site/bookings/${b.reference}`, null, { 'X-Booking-Email': email })).data;
+  assert.equal(look.chat.unread, 1);
+  const thread = (await guest('GET', `/site/bookings/${b.reference}/messages`, null, { 'X-Booking-Email': email })).data;
+  assert.equal(thread.messages.at(-1).from, 'concierge');
+  assert.equal((await guest('GET', `/site/bookings/${b.reference}`, null, { 'X-Booking-Email': email })).data.chat.unread, 0);
+  const pending = (await staff('GET', '/bookings?status=Pending&kind=Booking')).data.items[0];
+  const pd = (await staff('GET', `/bookings/${pending.id}`)).data;
+  assert.equal((await guest('POST', `/site/bookings/${pending.reference}/messages`, { email: pd.clientEmail, body: 'Hello?' })).status, 409);
 });
 
 await check('CMS: profile publish needs ID check; slug change creates a redirect; retire', async () => {
@@ -401,9 +263,9 @@ await check('permissions: coordinator can manage bookings, can only view profile
 await check('SEO: sitemap and robots, redirects resolve', async () => {
   const sm = await guest('GET', '/site/sitemap.xml');
   assert.match(sm.data, /<urlset/);
-  assert.ok(sm.data.includes('/companions/sofia') && !sm.data.includes('/companions/yuna'), 'VIP profiles stay out of the sitemap');
+  assert.ok(sm.data.includes('/companions/sofia') && !sm.data.includes('/vip<'), 'no VIP page in the sitemap');
   assert.match((await guest('GET', '/site/robots.txt')).data, /Sitemap:/);
-  assert.equal((await guest('GET', '/site/resolve?path=/vip-club')).data.to, '/vip');
+  assert.equal((await guest('GET', '/site/resolve?path=/ladies')).data.to, '/female');
 });
 
 await check('database constraints: adults only, publish requires ID check', async () => {
@@ -422,7 +284,7 @@ await check('security: headers, cross-site requests, CORS, uploads, password has
   assert.equal(res.headers.get('x-powered-by'), null);
   assert.equal(res.headers.get('cache-control'), 'no-store');
   // a form or script on another website can't make changes with the visitor's cookies
-  const evil = await fetch(`${base}/account/login`, { method: 'POST', headers: { Origin: 'https://evil.example', 'Content-Type': 'application/json' }, body: '{}' });
+  const evil = await fetch(`${base}/site/inquiries`, { method: 'POST', headers: { Origin: 'https://evil.example', 'Content-Type': 'application/json' }, body: '{}' });
   assert.equal(evil.status, 403);
   const preflight = await fetch(`${base}/site/bootstrap`, { headers: { Origin: 'https://evil.example' } });
   assert.equal(preflight.headers.get('access-control-allow-origin'), null, 'other sites get no CORS access');

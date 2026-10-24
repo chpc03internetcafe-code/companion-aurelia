@@ -1,6 +1,6 @@
 // Live chat between website visitors and the concierge desk.
 //
-// - A visitor (guest or signed-in member) starts a chat from the website widget. Their browser gets a random
+// - A website visitor starts a chat from the chat button. Their browser gets a random
 //   token in an httpOnly cookie; only its SHA-256 is stored, so the chat can't be opened from anywhere else.
 // - Staff with the Contact Messages permission answer in the CMS (Live chat). Messages are stored encrypted.
 // - Both sides long-poll for new messages (lib/longpoll.js), so it works on Vercel without WebSockets.
@@ -26,8 +26,7 @@ export const MAX_LENGTH = 2000;
 export const TOPIC = 'live-chat';
 const AWAY_MS = 2 * 60_000; // the visitor counts as gone (and is emailed about replies) after this long without checking in
 
-const SELECT = `SELECT c.*, u.full_name AS assigned_name, m.member_no, m.full_name AS member_name
-  FROM live_chats c LEFT JOIN admin_users u ON u.id = c.assigned_to LEFT JOIN members m ON m.id = c.member_id`;
+const SELECT = 'SELECT c.*, u.full_name AS assigned_name FROM live_chats c LEFT JOIN admin_users u ON u.id = c.assigned_to';
 
 export function cleanText(text) {
   const body = String(text ?? '').replace(/\r\n/g, '\n').trim();
@@ -59,13 +58,13 @@ export function deskOnline() {
 }
 
 /** Starts a chat for this browser with its first message, and sets the cookie. */
-export async function startChat(req, res, { name, email, message, page, memberId }) {
+export async function startChat(req, res, { name, email, message, page }) {
   const body = cleanText(message);
   const token = crypto.randomBytes(32).toString('base64url');
   const chat = await tx(async (db) => {
     const reference = await newReference(db, 'CHAT', 'live_chats', 'reference');
-    const c = await db.one(`INSERT INTO live_chats (reference, token_hash, member_id, visitor_name, visitor_email, page_url, visitor_seen_at)
-      VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING id, reference`, [reference, sha256(token), memberId || null, name, email || null, page || null]);
+    const c = await db.one(`INSERT INTO live_chats (reference, token_hash, visitor_name, visitor_email, page_url, visitor_seen_at)
+      VALUES ($1, $2, $3, $4, $5, now()) RETURNING id, reference`, [reference, sha256(token), name, email || null, page || null]);
     const m = await db.one("INSERT INTO live_chat_messages (chat_id, sender, body) VALUES ($1, 'Visitor', $2) RETURNING id", [c.id, encryptText(body)]);
     await db.run('UPDATE live_chats SET visitor_seen_message_id = $1 WHERE id = $2', [m.id, c.id]);
     return c;
@@ -142,16 +141,16 @@ export async function listChats(admin, { status = 'Open', search, mine, limit = 
   if (mine) where.push(`c.assigned_to = ${p.add(admin.id)}`);
   if (search) {
     const s = p.add(`%${search}%`);
-    where.push(`(c.reference ILIKE ${s} OR c.visitor_name ILIKE ${s} OR c.visitor_email ILIKE ${s} OR m.member_no ILIKE ${s})`);
+    where.push(`(c.reference ILIKE ${s} OR c.visitor_name ILIKE ${s} OR c.visitor_email ILIKE ${s})`);
   }
-  const rows = await q(`SELECT c.*, u.full_name AS assigned_name, m.member_no, ${unreadSql} AS unread, last.body AS last_body, last.sender AS last_sender
-    FROM live_chats c LEFT JOIN admin_users u ON u.id = c.assigned_to LEFT JOIN members m ON m.id = c.member_id
+  const rows = await q(`SELECT c.*, u.full_name AS assigned_name, ${unreadSql} AS unread, last.body AS last_body, last.sender AS last_sender
+    FROM live_chats c LEFT JOIN admin_users u ON u.id = c.assigned_to
     LEFT JOIN LATERAL (SELECT lm.body, lm.sender FROM live_chat_messages lm WHERE lm.chat_id = c.id ORDER BY lm.id DESC LIMIT 1) last ON TRUE
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY (c.status = 'Open') DESC, c.last_message_at DESC LIMIT ${p.add(Math.min(limit, 200))}`, p.values);
   const cut = (t) => { const s = String(t || '').replace(/\s+/g, ' '); return s.length > 120 ? `${s.slice(0, 119).trimEnd()}…` : s; };
   return rows.map((r) => ({
     id: r.id, reference: r.reference, status: r.status, visitorName: r.visitorName, visitorEmail: r.visitorEmail,
-    memberId: r.memberId, memberNo: r.memberNo, assignedTo: r.assignedTo, assignedName: r.assignedName, unread: r.unread,
+    assignedTo: r.assignedTo, assignedName: r.assignedName, unread: r.unread,
     lastMessageAt: r.lastMessageAt, createdAt: r.createdAt, preview: r.lastBody ? cut(r.lastBody) : '', lastSender: r.lastSender,
     visitorOnline: r.status === 'Open' && !!r.visitorSeenAt && Date.now() - new Date(r.visitorSeenAt).getTime() < 60_000,
   }));
@@ -177,7 +176,7 @@ export async function staffThread(c, after = 0, markSeen = true) {
   return {
     chat: {
       id: c.id, reference: c.reference, status: c.status, visitorName: c.visitorName, visitorEmail: c.visitorEmail, pageUrl: c.pageUrl,
-      memberId: c.memberId, memberNo: c.memberNo, memberName: c.memberName, assignedTo: c.assignedTo, assignedName: c.assignedName,
+      assignedTo: c.assignedTo, assignedName: c.assignedName,
       createdAt: c.createdAt, closedAt: c.closedAt, lastMessageAt: c.lastMessageAt,
       visitorOnline: c.status === 'Open' && !!c.visitorSeenAt && Date.now() - new Date(c.visitorSeenAt).getTime() < 60_000,
     },

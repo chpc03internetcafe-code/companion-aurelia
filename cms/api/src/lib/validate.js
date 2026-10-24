@@ -20,7 +20,7 @@ const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F​-‏‪-�
 
 // local@domain.tld: letters, digits and the usual symbols; domain labels of letters, digits and hyphens.
 const EMAIL = /^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.[a-z]{2,63}$/i;
-/** Syntax check for an email address (deliverability is checked separately at sign-up, see lib/email-check.js). */
+/** Syntax check for an email address. */
 export const isEmail = (v) => typeof v === 'string' && v.length <= 254 && EMAIL.test(v) && !v.includes('..') && v.split('@')[0].length <= 64
   && !v.startsWith('.') && !v.split('@')[0].endsWith('.');
 

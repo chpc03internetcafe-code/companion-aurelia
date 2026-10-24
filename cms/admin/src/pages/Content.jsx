@@ -1,4 +1,4 @@
-// Content: pages, posts (guides, announcements, member news) and FAQs.
+// Content: pages, posts (guides, announcements, news) and FAQs.
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -46,18 +46,17 @@ function Posts({ manage }) {
     <div className="card">
       {data.length ? (
         <table className="table">
-          <thead><tr><th>Title</th><th>Type</th><th>Audience</th><th className="hide-sm">Published</th><th>Status</th></tr></thead>
+          <thead><tr><th>Title</th><th>Type</th><th className="hide-sm">Published</th><th>Status</th></tr></thead>
           <tbody>{items.map((p) => (
             <tr key={p.id} className="clickable" onClick={() => navigate(`/content/posts/${p.id}`)}>
               <td><strong>{p.isPinned ? '📌 ' : ''}{p.title}</strong><span className="sub">/guides/{p.slug}{p.locationName ? ` · ${p.locationName}` : ''}</span></td>
               <td><Pill>{p.kind}</Pill></td>
-              <td><Pill>{p.audience}</Pill>{p.tierName && <span className="sub">{p.tierName}+</span>}</td>
               <td className="hide-sm nowrap">{p.publishedAt ? day(p.publishedAt) : '—'}</td>
               <td onClick={(e) => e.stopPropagation()}>{manage ? <Toggle checked={p.isPublished} onChange={() => patch(p, { isPublished: !p.isPublished })} label={p.isPublished ? 'Published' : 'Draft'} /> : <Pill>{p.isPublished ? 'Published' : 'Draft'}</Pill>}</td>
             </tr>
           ))}</tbody>
         </table>
-      ) : <Empty title="No articles yet" text="Write city guides, booking tips, announcements and member-only news." />}
+      ) : <Empty title="No articles yet" text="Write city guides, booking tips, announcements and news." />}
       {pager}
     </div>
   );
@@ -69,7 +68,7 @@ function FaqModal({ faq, groups, onClose, onSaved }) {
   return (
     <Modal title={faq?.id ? 'Edit FAQ' : 'New FAQ'} onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>Save</button></>}>
       <div className="stack">
-        <Field label="Group" error={errors.groupName} required hint="e.g. Booking, Membership, Privacy"><input value={form.groupName} onChange={set('groupName')} list="faq-groups" /><datalist id="faq-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist></Field>
+        <Field label="Group" error={errors.groupName} required hint="e.g. Booking, Safety, Privacy"><input value={form.groupName} onChange={set('groupName')} list="faq-groups" /><datalist id="faq-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist></Field>
         <Field label="Question" error={errors.question} required><input value={form.question} onChange={set('question')} /></Field>
         <Field label="Answer" error={errors.answer} required><textarea rows={5} value={form.answer} onChange={set('answer')} /></Field>
         <div className="row"><Toggle checked={form.isPublished} onChange={(v) => setForm({ ...form, isPublished: v })} label="Published" /><Toggle checked={form.showOnHome} onChange={(v) => setForm({ ...form, showOnHome: v })} label="Show on homepage" /></div>
@@ -124,7 +123,7 @@ export default function Content() {
   const [q, setQ] = useQueryState({ tab: 'pages' });
   return (
     <>
-      <PageHead title="Content & FAQs" subtitle="Website pages, guides and announcements (public or members-only), and the FAQ."
+      <PageHead title="Content & FAQs" subtitle="Website pages, guides and announcements, and the FAQ."
         actions={manage && (q.tab === 'pages' ? <Link className="btn btn-primary" to="/content/pages/new">+ New page</Link> : q.tab === 'posts' ? <Link className="btn btn-primary" to="/content/posts/new">+ New article</Link> : null)} />
       <Tabs tabs={[['pages', 'Pages'], ['posts', 'Guides & news'], ['faqs', 'FAQs']]} value={q.tab} onChange={(tab) => setQ({ tab })} />
       {q.tab === 'pages' && <Pages manage={manage} />}

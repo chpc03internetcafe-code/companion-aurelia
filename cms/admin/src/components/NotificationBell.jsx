@@ -41,7 +41,7 @@ export default function NotificationBell() {
                   <i aria-hidden="true">{MODULE_ICONS[n.module]}</i>
                   <span><strong>{n.title}</strong>{n.body && <small>{n.body}</small>}<time dateTime={n.createdAt}>{timeAgo(n.createdAt)}</time></span>
                 </button>
-              )) : <p className="notif-empty">You’re all caught up. New booking requests, membership requests and messages from the website show up here as they happen.</p>}
+              )) : <p className="notif-empty">You’re all caught up. New booking requests, messages and live chats from the website show up here as they happen.</p>}
             </div>
             <div className="notif-menu-foot">
               <label className="notif-pref"><input type="checkbox" checked={sound} onChange={(e) => setSound(e.target.checked)} /> Sound</label>

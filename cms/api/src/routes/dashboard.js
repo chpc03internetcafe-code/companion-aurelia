@@ -1,9 +1,9 @@
 // CMS dashboard: today's bookings, work queues and the last 30 days at a glance.
 import { Router } from 'express';
-import { one, q, run } from '../db/index.js';
+import { one, q } from '../db/index.js';
 import { wrap } from '../lib/http.js';
 import { can } from '../lib/admin-auth.js';
-import { expireOld } from '../services/members.js';
+import { chatStats } from '../services/live-chat.js';
 import { parseFees, SELECT_BOOKING } from '../services/bookings.js';
 
 const router = Router();
@@ -42,16 +42,10 @@ router.get('/', wrap(async (req, res) => {
         COUNT(*) FILTER (WHERE status = 'Published' AND NOT EXISTS (SELECT 1 FROM profile_schedules s WHERE s.profile_id = profiles.id))::int AS no_availability
       FROM profiles`);
   }
-  if (see('members')) {
-    await expireOld({ run });
-    out.members = await one(`SELECT COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE tier_id IS NOT NULL AND membership_expires_on >= ph_today())::int AS vip_active,
-        COUNT(*) FILTER (WHERE tier_id IS NOT NULL AND membership_expires_on BETWEEN ph_today() AND ph_today() + 14)::int AS expiring,
-        COUNT(*) FILTER (WHERE created_at >= now() - INTERVAL '30 days')::int AS new30,
-        (SELECT COUNT(*)::int FROM memberships WHERE status = 'Pending') AS pending
-      FROM members`);
+  if (see('inquiries')) {
+    out.inquiries = await one("SELECT COUNT(*) FILTER (WHERE status = 'New')::int AS new, COUNT(*) FILTER (WHERE status = 'In Progress')::int AS in_progress FROM inquiries");
+    out.liveChat = await chatStats();
   }
-  if (see('inquiries')) out.inquiries = await one("SELECT COUNT(*) FILTER (WHERE status = 'New')::int AS new, COUNT(*) FILTER (WHERE status = 'In Progress')::int AS in_progress FROM inquiries");
   res.set('Cache-Control', 'no-store');
   res.json(out);
 }));

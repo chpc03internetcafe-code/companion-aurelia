@@ -36,7 +36,7 @@ export function SlotPicker({ profileId, rateId, duration: dur, exclude, date, ti
 function NewBooking({ onClose, onSaved, preset = {} }) {
   const { meta } = useUi();
   const profiles = useLoad(() => api.get('/profiles/options'), []);
-  const { form, setForm, set, errors, saving, submit } = useForm({ kind: 'Booking', profileId: preset.profileId || '', rateId: '', date: '', time: '', locationId: '', meetingPlace: '', memberId: preset.memberId || '',
+  const { form, setForm, set, errors, saving, submit } = useForm({ kind: 'Booking', profileId: preset.profileId || '', rateId: '', date: '', time: '', locationId: '', meetingPlace: '',
     clientName: preset.clientName || '', clientEmail: preset.clientEmail || '', clientPhone: preset.clientPhone || '', preferredContact: 'Phone call', clientNotes: '', staffNotes: '', source: 'Phone', status: 'Confirmed', sendEmail: true, manualTime: false });
   const [quote, setQuote] = useState(null);
   const profile = profiles.data?.find((p) => p.id === Number(form.profileId));
@@ -44,7 +44,7 @@ function NewBooking({ onClose, onSaved, preset = {} }) {
     if (!form.profileId || !form.rateId) { setQuote(null); return; }
     api.post('/bookings/quote', { profileId: form.profileId, rateId: form.rateId, locationId: form.locationId || null }).then(setQuote).catch(() => setQuote(null));
   }, [form.profileId, form.rateId, form.locationId]);
-  const save = () => submit(async (f) => onSaved(await api.post('/bookings', { ...f, rateId: f.rateId || null, locationId: f.locationId || null, memberId: f.memberId || null, date: f.date || null, time: f.time || null })), 'Booking created');
+  const save = () => submit(async (f) => onSaved(await api.post('/bookings', { ...f, rateId: f.rateId || null, locationId: f.locationId || null, date: f.date || null, time: f.time || null })), 'Booking created');
   return (
     <Modal title="New booking" size="wide" onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>Create</button></>}>
       <div className="split" style={{ gridTemplateColumns: 'minmax(0, 3fr) minmax(240px, 2fr)' }}>
@@ -145,7 +145,7 @@ export default function Bookings() {
                 <tr key={b.id} className="clickable" onClick={() => navigate(`/bookings/${b.id}`)}>
                   <td className="nowrap">{b.bookingDate ? <><strong>{dayLong(b.bookingDate)}</strong><span className="sub">{b.startTime ? `${time12(b.startTime)} – ${time12(b.endTime)}` : 'No time'}</span></> : <span className="muted">No date</span>}</td>
                   <td><div className="row" style={{ flexWrap: 'nowrap' }}><Thumb src={b.profilePhoto} name={b.profileName} w={32} h={40} /><div><strong>{b.profileName}</strong><span className="sub">{b.kind === 'Inquiry' ? 'Inquiry' : `${b.rateLabel} · ${duration(b.durationMinutes)}`}</span></div></div></td>
-                  <td>{b.clientName}{b.memberNo && <> <Pill tone="violet">{b.memberNo}</Pill></>}<span className="sub">{b.reference} · {b.source} · {dateTime(b.createdAt)}</span></td>
+                  <td>{b.clientName}<span className="sub">{b.reference} · {b.source} · {dateTime(b.createdAt)}</span></td>
                   <td className="hide-sm">{b.kind === 'Booking' ? money(b.total, true) : '—'}</td>
                   <td><Pill>{b.status}</Pill></td>
                 </tr>

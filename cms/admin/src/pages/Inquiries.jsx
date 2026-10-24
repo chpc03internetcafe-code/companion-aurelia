@@ -31,7 +31,6 @@ function InquiryModal({ inquiry, onClose, onSaved }) {
         <div className="stack">
           <KeyVals rows={[
             ['From', inquiry.fullName], ['Email', inquiry.email], ['Phone', inquiry.phone], ['Received', dateTime(inquiry.createdAt)],
-            ['Member', inquiry.memberId ? <Link key="m" to={`/members/${inquiry.memberId}`}>{inquiry.memberName} ({inquiry.memberNo})</Link> : 'Not signed in'],
           ]} />
           <Field label="Status">
             <select value={inquiry.status} disabled={!manage || busy} onChange={(e) => update({ status: e.target.value }, 'Status updated')}>{meta.inquiryStatuses.map((s) => <option key={s}>{s}</option>)}</select>
@@ -72,7 +71,7 @@ export default function Inquiries() {
             <tbody>{data.items.map((i) => (
               <tr key={i.id} className="clickable" onClick={() => setOpen(i)}>
                 <td><strong>{i.fullName}</strong><span className="sub">{i.email}</span></td>
-                <td>{i.subject}{i.memberNo && <span className="sub">Member {i.memberNo}</span>}</td>
+                <td>{i.subject}</td>
                 <td className="hide-sm" style={{ maxWidth: 360 }}><span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.message}</span></td>
                 <td className="nowrap">{dateTime(i.createdAt)}<span className="sub">{i.reference}</span></td>
                 <td><Pill>{i.status}</Pill></td>

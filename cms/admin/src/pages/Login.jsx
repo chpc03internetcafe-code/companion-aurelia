@@ -14,7 +14,7 @@ function AuthShell({ children }) {
           <ul>
             <li>Booking requests, confirmations and live availability</li>
             <li>Verified profiles with photos, videos, rates and schedules</li>
-            <li>VIP members, tiers, renewals and private collections</li>
+            <li>Live chat and contact messages from the website</li>
             <li>Location pages, guides, FAQs, SEO and redirects</li>
           </ul>
         </div>
@@ -57,7 +57,7 @@ export function LoginScreen() {
         <div className="demo-box">
           <strong>Demo accounts</strong> (password <code>aurelia2026</code>):
           <div className="chips" style={{ marginTop: 6 }}>
-            {['admin', 'manager', 'bookings', 'profiles', 'members', 'content'].map((u) => (
+            {['admin', 'manager', 'bookings', 'profiles', 'content'].map((u) => (
               <button key={u} type="button" className="chip" onClick={() => setForm({ ...form, email: `${u}@aurelia.example`, password: 'aurelia2026' })}>{u}</button>
             ))}
           </div>

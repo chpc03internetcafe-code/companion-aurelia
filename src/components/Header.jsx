@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
 import { boldHtml } from '../utils/format';
-import { IconClose, IconCrown, IconHeart, IconMenu, IconUser } from './Icons';
+import { IconCalendar, IconClose, IconHeart, IconMenu } from './Icons';
 
 function Announcements({ items }) {
   const [i, setI] = useState(0);
@@ -32,12 +32,10 @@ export function Logo({ light }) {
 }
 
 export default function Header() {
-  const { site, categories, member, favorites } = useSite();
+  const { site, categories, favorites } = useSite();
   const [open, setOpen] = useState(false);
   const { pathname } = useLocation();
   useEffect(() => setOpen(false), [pathname]);
-  // the companion portal (/companion…, not /companions) is for the person behind a profile: no client shortcuts there
-  const portal = /^\/companion(\/|$)/.test(pathname);
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -46,7 +44,6 @@ export default function Header() {
     ['/companions', 'All companions'],
     ...categories.map((c) => [`/${c.slug}`, c.name]),
     ['/locations', 'Locations'],
-    ['/vip', 'VIP'],
     ['/guides', 'Guides'],
   ];
 
@@ -60,15 +57,11 @@ export default function Header() {
             {nav.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}
           </nav>
           <div className="header-actions">
-            {!portal && <>
-              <Link to="/favorites" className="icon-link" aria-label={`Favourites (${favorites.length})`} title="Favourites">
-                <IconHeart size={18} />{favorites.length > 0 && <span className="count">{favorites.length}</span>}
-              </Link>
-              <Link to="/account" className="icon-link" aria-label={member ? 'My account' : 'Sign in'} title={member ? `${member.firstName}’s account` : 'Member sign-in'}>
-                {member?.vipActive ? <IconCrown size={18} /> : <IconUser size={18} />}{member && <span className="dot" aria-hidden="true" />}
-              </Link>
-              <Link to="/companions?available=today" className="btn btn-primary btn-sm header-book">Available today</Link>
-            </>}
+            <Link to="/favorites" className="icon-link" aria-label={`Favourites (${favorites.length})`} title="Favourites">
+              <IconHeart size={18} />{favorites.length > 0 && <span className="count">{favorites.length}</span>}
+            </Link>
+            <Link to="/booking-status" className="icon-link" aria-label="Check my booking" title="Check my booking"><IconCalendar size={18} /></Link>
+            <Link to="/companions?available=today" className="btn btn-primary btn-sm header-book">Available today</Link>
             <button className="menu-toggle" onClick={() => setOpen(true)} aria-label="Open menu"><IconMenu size={26} /></button>
           </div>
         </div>
@@ -83,15 +76,12 @@ export default function Header() {
             <nav>
               <NavLink to="/" end>Home</NavLink>
               {nav.map(([to, label]) => <NavLink key={to} to={to}>{label}</NavLink>)}
-              {portal ? <NavLink to="/companion">Companion portal</NavLink> : <>
-                <NavLink to="/favorites">Favourites ({favorites.length})</NavLink>
-                <NavLink to="/booking-status">Check my booking</NavLink>
-              </>}
+              <NavLink to="/favorites">Favourites ({favorites.length})</NavLink>
+              <NavLink to="/booking-status">Check my booking</NavLink>
               <NavLink to="/faq">FAQ</NavLink>
               <NavLink to="/contact">Contact</NavLink>
-              {!portal && <NavLink to="/account">{member ? 'My account' : 'Member sign-in'}</NavLink>}
             </nav>
-            {!portal && <Link to="/companions?available=today" className="btn btn-primary btn-block">Available today</Link>}
+            <Link to="/companions?available=today" className="btn btn-primary btn-block">Available today</Link>
           </aside>
         </div>
       )}

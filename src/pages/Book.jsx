@@ -68,7 +68,7 @@ function Confirmation({ b, email }) {
 export default function Book() {
   const { slug } = useParams();
   const [params] = useSearchParams();
-  const { member, rules, contactMethods, site, toast } = useSite();
+  const { contactMethods, site, toast } = useSite();
   const kind = params.get('kind') === 'inquiry' ? 'Inquiry' : 'Booking';
   const [p, setP] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -92,10 +92,7 @@ export default function Book() {
       if (!x.rates.some((r) => r.id === rateId)) setRateId(x.rates.length === 1 ? x.rates[0].id : null);
       setForm((f) => ({ ...f, locationId: x.baseLocationId || '' }));
     }).catch((e) => setLoadError(e));
-  }, [slug, member?.tierRank]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (member) setForm((f) => ({ ...f, name: f.name || member.fullName, email: f.email || member.email, phone: f.phone || member.phone || '' }));
-  }, [member]);
+  }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rate = p?.rates.find((r) => r.id === rateId) || null;
   // open days for the chosen session
@@ -128,12 +125,9 @@ export default function Book() {
     return list;
   }, [p]);
 
-  if (loadError) return <section className="section"><div className="narrow"><Empty title="Profile not available" text={loadError.status === 403 ? 'This is a VIP profile. Sign in with a qualifying membership to book.' : 'This profile can’t be booked right now.'} action={<Link to="/companions" className="btn btn-primary">Browse companions</Link>} /></div></section>;
+  if (loadError) return <section className="section"><div className="narrow"><Empty title="Profile not available" text="This profile can’t be booked right now." action={<Link to="/companions" className="btn btn-primary">Browse companions</Link>} /></div></section>;
   if (!p) return <Loading />;
   if (done) return <Confirmation b={done} email={form.email} />;
-  if (rules.membersOnly && !member) {
-    return <section className="section"><div className="narrow"><Empty title="Members only" text="Please sign in to your member account to send a booking request." action={<Link to={`/account?next=${encodeURIComponent(`/book/${slug}`)}`} className="btn btn-primary">Sign in or join</Link>} /></div></section>;
-  }
   const bookable = kind === 'Inquiry' || (p.bookingEnabled && p.rates.length > 0);
   const set = (k) => (e) => { setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }); setErrors((x) => ({ ...x, [k]: undefined })); };
   const step = kind === 'Inquiry' ? 3 : !rate ? 1 : !time ? 2 : 3;
@@ -221,7 +215,6 @@ export default function Book() {
         {(kind === 'Inquiry' || (rate && time)) && bookable && (
           <form className="panel" onSubmit={submit} noValidate>
             <h3>{kind === 'Inquiry' ? 'Your inquiry' : '3. Your details'}</h3>
-            {!member && <p className="muted" style={{ fontSize: '0.88rem' }}>Have an account? <Link to={`/account?next=${encodeURIComponent(`/book/${p.slug}${kind === 'Inquiry' ? '?kind=inquiry' : ''}`)}`}>Sign in</Link> to keep this booking in your history.</p>}
             <div className="form-grid">
               <Field label="Name" error={errors.name} required><input value={form.name} onChange={set('name')} autoComplete="name" required /></Field>
               <Field label="Email" error={errors.email} required><input type="email" value={form.email} onChange={set('email')} autoComplete="email" required /></Field>

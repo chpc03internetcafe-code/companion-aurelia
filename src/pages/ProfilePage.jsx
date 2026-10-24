@@ -6,7 +6,7 @@ import { breadcrumbLd, useSeo } from '../utils/seo';
 import { day, duration, money, time12, timeAgo, todayIso, weekday, WEEKDAYS } from '../utils/format';
 import ProfileCard, { FavoriteButton, ShareButton } from '../components/ProfileCard';
 import { Crumbs, PageSkeleton, Photo, SectionHead } from '../components/Common';
-import { IconBack, IconCalendar, IconCheck, IconChevron, IconClock, IconCrown, IconGlobe, IconLock, IconPin, IconPlay, IconShield } from '../components/Icons';
+import { IconBack, IconCalendar, IconCheck, IconChevron, IconClock, IconGlobe, IconPin, IconPlay, IconShield } from '../components/Icons';
 import NotFound from './NotFound';
 
 const embed = (url) => {
@@ -20,7 +20,6 @@ const embed = (url) => {
 function Gallery({ p }) {
   const [i, setI] = useState(0);
   const items = p.media;
-  const locked = p.lockedMedia.photos + p.lockedMedia.videos;
   const cur = items[i];
   const go = (d) => setI((n) => (n + d + items.length) % items.length);
   useEffect(() => {
@@ -41,18 +40,14 @@ function Gallery({ p }) {
           <button className="icon-btn gallery-nav next" onClick={() => go(1)} aria-label="Next photo"><IconChevron size={18} /></button>
         </>}
         {items.length > 0 && <span className="badge gallery-count">{i + 1} / {items.length}</span>}
-        {cur?.vipOnly && <span className="badge badge-vip" style={{ position: 'absolute', top: 12, left: 12 }}><IconCrown size={12} />Members only</span>}
       </div>
-      {(items.length > 1 || locked > 0) && (
+      {items.length > 1 && (
         <div className="thumbs" role="list">
           {items.map((m, k) => (
             <button key={m.id} className={k === i ? 'on' : ''} onClick={() => setI(k)} aria-label={`${m.kind === 'video' ? 'Video' : 'Photo'} ${k + 1}`} role="listitem">
               {m.kind === 'video' ? <><Photo src={m.posterUrl} name="▶" /><span className="vid"><IconPlay size={22} /></span></> : <img src={m.url} alt="" loading="lazy" decoding="async" />}
             </button>
           ))}
-          {locked > 0 && <Link to="/vip" className="thumbs-locked" style={{ flex: 'none', width: 76, aspectRatio: '4 / 5', borderRadius: 12, border: '1px dashed var(--primary)', display: 'grid', placeItems: 'center', textAlign: 'center', fontSize: '0.72rem', fontWeight: 800, color: 'var(--primary)', padding: 4 }}>
-            <span><IconLock size={18} /><br />+{locked} VIP</span>
-          </Link>}
         </div>
       )}
     </div>
@@ -82,7 +77,7 @@ function Week({ schedule, timeOff }) {
 
 export default function ProfilePage() {
   const { slug } = useParams();
-  const { member, site } = useSite();
+  const { site } = useSite();
   const navigate = useNavigate();
   const [state, setState] = useState({ loading: true });
   useEffect(() => {
@@ -93,7 +88,7 @@ export default function ProfilePage() {
         if (e.status === 410 && e.data.redirect) return navigate(e.data.redirect, { replace: true });
         setState({ error: e.status, info: e.data });
       });
-  }, [slug, member?.tierRank, navigate]);
+  }, [slug, navigate]);
   const p = state.p;
   const cityName = p?.location ? (p.location.parent ? `${p.location.name}, ${p.location.parent}` : p.location.name) : '';
   useSeo(p ? {
@@ -120,19 +115,6 @@ export default function ProfilePage() {
       </div></section>
     );
   }
-  if (state.error === 403) {
-    return (
-      <section className="section"><div className="narrow center">
-        <IconCrown size={42} style={{ color: 'var(--primary)' }} />
-        <h1>{state.info.name} is a VIP profile</h1>
-        <p className="lead" style={{ margin: '0 auto 24px' }}>This profile is visible to {state.info.vipTierName || 'VIP'} members{member ? ' — upgrade your membership to view it.' : '. Sign in or join to view it.'}</p>
-        <div className="row" style={{ justifyContent: 'center' }}>
-          <Link to={member ? '/account/membership' : '/vip'} className="btn btn-primary btn-lg">{member ? 'Upgrade membership' : 'See VIP membership'}</Link>
-          {!member && <Link to="/account" className="btn btn-ghost btn-lg">Sign in</Link>}
-        </div>
-      </div></section>
-    );
-  }
   if (state.error) return <section className="section"><div className="narrow"><div className="notice error">This profile couldn’t be loaded. Please try again.</div></div></section>;
 
   const facts = [
@@ -152,7 +134,6 @@ export default function ProfilePage() {
         <div className="sticky-cta">
           <div className="profile-head">
             <div className="row" style={{ marginBottom: 10 }}>
-              {p.vip && <span className="vip-chip"><IconCrown size={13} />{p.vipTierName} profile</span>}
               {p.verified && <span className="vip-chip" style={{ color: 'var(--ok)', borderColor: 'rgba(76,195,138,.4)', background: 'rgba(76,195,138,.08)' }}><IconShield size={13} />Verified</span>}
               {p.featured && <span className="vip-chip">Featured</span>}
               <span className="spacer" />
@@ -189,13 +170,6 @@ export default function ProfilePage() {
               <Link to={`/book/${p.slug}?kind=inquiry`} className="btn btn-ghost btn-lg" style={{ flex: canBook ? 'none' : 1 }}>Send an inquiry</Link>
             </div>
           </div>
-          {(p.lockedMedia.photos > 0 || p.lockedMedia.videos > 0) && (
-            <div className="locked-box" style={{ marginTop: 16 }}>
-              <IconLock size={26} style={{ color: 'var(--primary)', flex: 'none' }} />
-              <div style={{ flex: 1 }}><strong>Private gallery</strong><div className="muted" style={{ fontSize: '0.88rem' }}>{p.lockedMedia.photos} photo(s){p.lockedMedia.videos ? ` and ${p.lockedMedia.videos} video(s)` : ''} for VIP members.</div></div>
-              <Link to={member ? '/account/membership' : '/vip'} className="btn btn-soft btn-sm">{member ? 'Upgrade' : 'Join VIP'}</Link>
-            </div>
-          )}
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-// Calls the API through the dev-server proxy (same origin, so the member's httpOnly session cookie is sent).
+// Calls the API through the dev-server proxy (same origin, so httpOnly cookies such as the live chat's are sent).
 export class ApiError extends Error {
   constructor(status, message, details, data) {
     super(message);

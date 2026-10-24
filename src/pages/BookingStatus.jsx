@@ -1,5 +1,5 @@
-// Booking status: look up with reference + email (or signed in), see the timeline, cancel or reschedule within the policy,
-// and chat with the companion once the booking is confirmed.
+// Booking status: look up with reference + email, see the timeline, cancel or reschedule within the policy,
+// and chat with the concierge once the booking is confirmed.
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
@@ -58,7 +58,7 @@ function Reschedule({ b, email, onDone, onCancel }) {
 export default function BookingStatus() {
   const { ref } = useParams();
   const navigate = useNavigate();
-  const { member, toast, site } = useSite();
+  const { toast, site } = useSite();
   const [form, setForm] = useState({ reference: ref || '', email: (ref && lookupEmail.get(ref)) || '' });
   const [b, setB] = useState(null);
   const [error, setError] = useState('');
@@ -78,7 +78,7 @@ export default function BookingStatus() {
       if (r.reference !== ref) navigate(`/booking-status/${r.reference}`, { replace: true });
     } catch (e) { setError(e.message); setB(null); } finally { setBusy(false); }
   };
-  useEffect(() => { if (ref && (form.email || member)) lookup(ref, form.email); }, [ref, member?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (ref && form.email) lookup(ref, form.email); }, [ref]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const cancel = async () => {
     setBusy(true);
@@ -100,7 +100,6 @@ export default function BookingStatus() {
               <Field label="Email" required><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required /></Field>
               {error && <div className="notice error">{error}</div>}
               <button className="btn btn-primary btn-block" disabled={busy}>{busy ? 'Looking up…' : 'Find my booking'}</button>
-              {member && <p className="muted center" style={{ margin: 0 }}>Signed in? All your bookings are in <Link to="/account/bookings">your account</Link>.</p>}
             </form>
           </div>
         </section>
@@ -157,8 +156,8 @@ export default function BookingStatus() {
           <div className="stack">
           {b.chat && (
             <Chat key={b.reference} path={`/site/bookings/${b.reference}/messages`} extra={form.email ? { email: form.email } : {}}
-              title={`Messages with ${b.profile.name}`} placeholder={`Write to ${b.profile.name}…`}
-              hint="Our concierge can read this chat to help if anything goes wrong. Please keep payments and personal details within the booking." />
+              title="Messages with the concierge" placeholder="Write to the concierge…"
+              hint="Questions about this booking? Our concierge replies here, and we’ll email you when there’s a new message." />
           )}
           <div className="panel">
             <h3>Status updates</h3>

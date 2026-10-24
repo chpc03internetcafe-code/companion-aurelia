@@ -8,13 +8,11 @@ import { ErrorBox, Field, Loading, Modal, PageHead, Pill, Tabs, Toggle, useActio
 const GROUPS = {
   general: ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl', 'telegramUrl', 'whatsappUrl', 'currency'],
   homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText', 'liveChatEnabled', 'liveChatGreeting'],
-  booking: ['autoConfirm', 'bookingLeadHours', 'bookingWindowDays', 'cancelCutoffHours', 'rescheduleLimit', 'slotMinutes', 'bufferMinutes', 'membersOnlyBooking', 'bookingPolicy', 'memberPaymentInstructions'],
-  security: ['staffIdleMinutes', 'companionIdleMinutes', 'memberIdleMinutes'],
+  booking: ['autoConfirm', 'bookingLeadHours', 'bookingWindowDays', 'cancelCutoffHours', 'rescheduleLimit', 'slotMinutes', 'bufferMinutes', 'bookingPolicy'],
+  security: ['staffIdleMinutes'],
 };
 const IDLE_FIELDS = [
   ['staffIdleMinutes', 'CMS staff', 'Staff using this CMS'],
-  ['companionIdleMinutes', 'Companion portal', 'Companions signed in to their portal on the website'],
-  ['memberIdleMinutes', 'Member accounts', 'Clients signed in to their account on the website'],
 ];
 const pickKeys = (s, keys) => Object.fromEntries(keys.map((k) => [k, s[k] ?? '']));
 
@@ -171,7 +169,6 @@ export default function Settings() {
               <div className="card card-pad stack">
                 <h2>Booking rules</h2>
                 <Toggle {...flag(form, setForm, 'autoConfirm')} label="Confirm online requests automatically" hint="Off = requests wait for the concierge" />
-                <Toggle {...flag(form, setForm, 'membersOnlyBooking')} label="Only signed-in members can book" hint="Guests can still send inquiries" />
                 <div className="form-grid">
                   <Field label="Earliest booking (hours from now)" error={errors.bookingLeadHours}><input type="number" value={form.bookingLeadHours} onChange={set('bookingLeadHours')} /></Field>
                   <Field label="Bookable up to (days ahead)" error={errors.bookingWindowDays}><input type="number" value={form.bookingWindowDays} onChange={set('bookingWindowDays')} /></Field>
@@ -183,7 +180,6 @@ export default function Settings() {
               </div>
               <div className="card card-pad stack">
                 <Field label="Booking policy" error={errors.bookingPolicy} hint="Shown after booking and in emails"><textarea rows={5} value={form.bookingPolicy} onChange={set('bookingPolicy')} /></Field>
-                <Field label="Membership payment instructions" error={errors.memberPaymentInstructions} hint="Shown when a member requests a tier"><textarea rows={5} value={form.memberPaymentInstructions} onChange={set('memberPaymentInstructions')} /></Field>
               </div>
             </div>
           )}
@@ -194,7 +190,7 @@ export default function Settings() {
           {({ form, set, errors }) => (
             <div className="card card-pad stack">
               <div>
-                <h2>Sign out after inactivity</h2>
+                <h2>Sign out of the CMS after inactivity</h2>
                 <p className="muted" style={{ margin: '4px 0 0' }}>Signs people out when they haven’t used the site for this many minutes, even with “Keep me signed in” ticked. A warning appears a minute before, with the option to stay signed in. Enter 0 to turn it off.</p>
               </div>
               <div className="form-grid cols-3">

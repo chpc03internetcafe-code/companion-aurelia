@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
 import { duration, money } from '../utils/format';
-import { IconCamera, IconCheck, IconCrown, IconHeart, IconPin, IconPlay, IconShare } from './Icons';
+import { IconCamera, IconCheck, IconHeart, IconPin, IconPlay, IconShare } from './Icons';
 import { Photo, useOutside } from './Common';
 
 export function FavoriteButton({ profile, className = '' }) {
@@ -57,8 +57,7 @@ export default function ProfileCard({ p }) {
       <div className="p-card-media">
         <Photo src={p.photoUrl} alt={p.photoAlt} name={p.name} />
         <div className="p-card-badges">
-          {p.vip && <span className="badge badge-vip"><IconCrown size={12} />{p.vipTierName || 'VIP'}</span>}
-          {p.featured && !p.vip && <span className="badge badge-gold">Featured</span>}
+          {p.featured && <span className="badge badge-gold">Featured</span>}
           {p.verified && <span className="badge badge-ok"><IconCheck size={12} />Verified</span>}
         </div>
         <div className="p-card-fav"><FavoriteButton profile={p} /></div>

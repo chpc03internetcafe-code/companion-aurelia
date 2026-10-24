@@ -5,13 +5,6 @@ import { HttpError } from './http.js';
 /** Production = deployed (Vercel) or NODE_ENV=production. Debug helpers are off in production. */
 export const isProduction = () => !!process.env.VERCEL || process.env.NODE_ENV === 'production';
 
-/**
- * "Open the link directly" shortcuts for email links when email isn't configured. Only on a developer's
- * machine: never in production, and with a hosted database only when SHOW_DEV_LINKS=1 is set explicitly.
- * (Returning a password-reset link to whoever asked would let anyone take over any account.)
- */
-export const devLinksAllowed = () => !isProduction() && (!process.env.DATABASE_URL || process.env.SHOW_DEV_LINKS === '1');
-
 // ---------- Client IP ----------
 // X-Forwarded-For can be typed by anyone, so it's only believed as far as a known proxy vouches for it:
 // - Vercel replaces the header with the real client address (and sets X-Real-IP).
@@ -121,7 +114,6 @@ export function checkProductionConfig() {
   const setup = process.env.ADMIN_SETUP_KEY || '';
   if (setup && setup.length < 16) problems.push('ADMIN_SETUP_KEY is shorter than 16 characters; use a long random value.');
   if (process.env.SITE_URL && !process.env.SITE_URL.startsWith('https://')) problems.push('SITE_URL should start with https:// in production.');
-  if (process.env.SHOW_DEV_LINKS === '1') problems.push('SHOW_DEV_LINKS is ignored in production.');
   if (!process.env.MESSAGE_ENCRYPTION_KEY) problems.push('MESSAGE_ENCRYPTION_KEY is not set: booking chats and notes can’t be saved.');
   if ((process.env.CORS_ORIGIN || '').includes('*')) problems.push('CORS_ORIGIN must list exact origins; "*" is not supported.');
   for (const p of problems) console.warn(`[security] ${p}`);

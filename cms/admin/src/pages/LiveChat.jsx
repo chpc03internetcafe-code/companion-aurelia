@@ -47,7 +47,7 @@ function ChatRow({ c, active }) {
         {c.unread > 0 ? <span className="pill pill-red">{c.unread} new</span> : <small className="muted">{timeAgo(c.lastMessageAt)}</small>}
       </span>
       <span className="lc-row-preview">{c.lastSender === 'Staff' ? 'You: ' : ''}{c.preview}</span>
-      <small className="muted">{c.reference}{c.memberNo ? ` · member ${c.memberNo}` : ''}{c.assignedName ? ` · ${c.assignedName}` : ''}{c.status === 'Closed' ? ' · closed' : ''}</small>
+      <small className="muted">{c.reference}{c.assignedName ? ` · ${c.assignedName}` : ''}{c.status === 'Closed' ? ' · closed' : ''}</small>
     </Link>
   );
 }
@@ -128,7 +128,6 @@ function Thread({ id, manage, onChanged, feedTick }) {
           <KeyVals rows={[
             ['Reference', c.reference],
             ['Email', c.visitorEmail ? <a href={`mailto:${c.visitorEmail}`}>{c.visitorEmail}</a> : '—'],
-            ['Member', c.memberId ? <Link to={`/members/${c.memberId}`}>{c.memberName} ({c.memberNo})</Link> : 'Guest'],
             ['Started on', c.pageUrl || '—'],
             ['Started', dateTime(c.createdAt)],
             ['Handled by', c.assignedName || '—'],

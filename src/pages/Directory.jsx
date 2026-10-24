@@ -11,10 +11,10 @@ import { CardsSkeleton, Empty, Field, PageHero, useDebounced } from '../componen
 import { IconClose, IconFilter } from '../components/Icons';
 import NotFound from './NotFound';
 
-const KEYS = ['q', 'location', 'category', 'budgetMin', 'budgetMax', 'duration', 'available', 'verified', 'featured', 'vip', 'sort', 'page'];
+const KEYS = ['q', 'location', 'category', 'budgetMin', 'budgetMax', 'duration', 'available', 'verified', 'featured', 'sort', 'page'];
 
 function FilterPanel({ f, set, fixed, open, onClose }) {
-  const { categories, cities, areasOf, durations, sorts, member } = useSite();
+  const { categories, cities, areasOf, durations, sorts } = useSite();
   const [q, setQ] = useState(f.q || '');
   const [budget, setBudget] = useState({ min: f.budgetMin || '', max: f.budgetMax || '' });
   useEffect(() => { setQ(f.q || ''); setBudget({ min: f.budgetMin || '', max: f.budgetMax || '' }); }, [f.q, f.budgetMin, f.budgetMax]);
@@ -91,7 +91,6 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
         <div className="stack">
           <label className="check"><input type="checkbox" checked={f.verified === '1'} onChange={(e) => set({ verified: e.target.checked ? '1' : '' })} /> Verified only</label>
           <label className="check"><input type="checkbox" checked={f.featured === '1'} onChange={(e) => set({ featured: e.target.checked ? '1' : '' })} /> Featured only</label>
-          {member?.vipActive && <label className="check"><input type="checkbox" checked={f.vip === '1'} onChange={(e) => set({ vip: e.target.checked ? '1' : '' })} /> VIP profiles only</label>}
         </div>
       </div>
       <div>
@@ -107,7 +106,7 @@ function FilterPanel({ f, set, fixed, open, onClose }) {
 }
 
 export function DirectoryResults({ fixed = {}, heading }) {
-  const { categories, locations, sorts, member } = useSite();
+  const { categories, locations, sorts } = useSite();
   const [params, setParams] = useSearchParams();
   const f = useMemo(() => Object.fromEntries(KEYS.map((k) => [k, params.get(k) || ''])), [params]);
   const [state, setState] = useState({ loading: true, data: null, error: '' });
@@ -131,7 +130,7 @@ export function DirectoryResults({ fixed = {}, heading }) {
       .then((data) => !cancelled && setState({ loading: false, data, error: '' }))
       .catch((e) => !cancelled && setState({ loading: false, data: null, error: e.message }));
     return () => { cancelled = true; };
-  }, [key, member?.tierRank]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -140,7 +139,7 @@ export function DirectoryResults({ fixed = {}, heading }) {
   const labels = {
     q: (v) => `“${v}”`, location: (v) => locations.find((l) => l.slug === v)?.name || v, category: (v) => categories.find((c) => c.slug === v)?.name || v,
     budgetMin: (v) => `From ${money(v)}`, budgetMax: (v) => `Up to ${money(v)}`, duration: (v) => duration(Number(v)), available: (v) => (v === 'today' ? 'Available today' : `Available ${v}`),
-    verified: () => 'Verified', featured: () => 'Featured', vip: () => 'VIP only', sort: (v) => sorts[v] || v,
+    verified: () => 'Verified', featured: () => 'Featured', sort: (v) => sorts[v] || v,
   };
   const active = KEYS.filter((k) => k !== 'page' && f[k] && !fixed[k]);
   const d = state.data;

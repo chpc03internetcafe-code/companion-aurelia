@@ -6,7 +6,7 @@ import { faqLd, useSeo } from '../utils/seo';
 import { day } from '../utils/format';
 import ProfileCard from '../components/ProfileCard';
 import { CardsSkeleton, FaqList, Photo, SectionHead } from '../components/Common';
-import { IconCalendar, IconCheck, IconCrown, IconShield } from '../components/Icons';
+import { IconCalendar, IconChat, IconCheck, IconShield } from '../components/Icons';
 
 function SearchPanel() {
   const { categories, cities, areasOf } = useSite();
@@ -48,9 +48,9 @@ function SearchPanel() {
 }
 
 export default function Home() {
-  const { site, stats, faqs, cities, categories, tiers, member } = useSite();
+  const { site, stats, faqs, cities, categories } = useSite();
   const [data, setData] = useState(null);
-  useEffect(() => { api('GET', '/site/home').then(setData).catch(() => setData({ featured: [], recent: [], posts: [] })); }, [member?.id]);
+  useEffect(() => { api('GET', '/site/home').then(setData).catch(() => setData({ featured: [], recent: [], posts: [] })); }, []);
   const homeFaqs = faqs.filter((f) => f.showOnHome);
   const popular = cities.filter((c) => c.isPopular);
   useSeo({
@@ -151,20 +151,18 @@ export default function Home() {
         </div>
       </section>
 
-      {tiers.length > 0 && (
-        <section className="section" style={{ paddingTop: 0 }}>
-          <div className="container">
-            <div className="cta-band">
-              <div>
-                <span className="kicker"><IconCrown size={14} /> VIP membership</span>
-                <h2>Private collections. Priority bookings.</h2>
-                <p className="lead" style={{ margin: 0 }}>Members unlock VIP-only profiles, private galleries and exclusive guides — from {tiers[0] && new Intl.NumberFormat('en-PH', { style: 'currency', currency: site.currency || 'PHP', maximumFractionDigits: 0 }).format(tiers[0].price)}.</p>
-              </div>
-              <Link to="/vip" className="btn btn-primary btn-lg">Explore VIP</Link>
+      <section className="section" style={{ paddingTop: 0 }}>
+        <div className="container">
+          <div className="cta-band">
+            <div>
+              <span className="kicker"><IconChat size={14} /> Concierge</span>
+              <h2>Not sure who to book?</h2>
+              <p className="lead" style={{ margin: 0 }}>Tell us what you have in mind and our concierge will suggest companions, check availability and answer any question — discreetly.</p>
             </div>
+            <Link to="/contact" className="btn btn-primary btn-lg">Contact the concierge</Link>
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
       {data?.posts?.length > 0 && (
         <section className="section section-alt">

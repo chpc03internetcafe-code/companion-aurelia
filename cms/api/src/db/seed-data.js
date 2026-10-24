@@ -1,4 +1,4 @@
-// Demo content: fictional profiles, locations, tiers, pages and FAQs. Everything is invented.
+// Demo content: fictional profiles, locations, pages and FAQs. Everything is invented.
 
 export const categories = [
   { name: 'Female', slug: 'female', description: 'Verified female companions for dinners, events and travel.', intro: 'Elegant, articulate company for business dinners, gala nights, gallery openings and weekend getaways. Every profile is ID-verified and updated by our team.' },
@@ -56,15 +56,6 @@ export const locations = [
   },
 ];
 
-export const tiers = [
-  { name: 'Silver', slug: 'silver', rank: 1, price: 2500, durationDays: 30, color: '#b9bcc4', description: 'Your first step into the members’ area.',
-    perks: ['Members-only collections', 'Exclusive guides and news', 'Saved favourites on every device', 'Priority replies from the concierge'] },
-  { name: 'Gold', slug: 'gold', rank: 2, price: 6000, durationDays: 90, color: '#d4af6a', description: 'Our most popular membership.',
-    perks: ['Everything in Silver', 'Gold-only profiles and private galleries', 'Gold Selection collection', 'First access to new companions'] },
-  { name: 'Black', slug: 'black', rank: 3, price: 18000, durationDays: 365, color: '#3a3a40', description: 'A year of our highest level of access.',
-    perks: ['Everything in Gold', 'Black-only profiles', 'Dedicated concierge contact', 'Travel arrangements on request'] },
-];
-
 const BIO = {
   warm: 'Warm, curious and easy to talk to, I love long dinners where the conversation drifts from travel to music to the best street food in town. Friends describe me as the person who makes everyone at the table feel welcome.',
   polished: 'Polished and well-read, I’m at home at a gala, a business dinner or a quiet wine bar. I enjoy art, design and good coffee, and I’m always happy to be your guide to the city’s best restaurants.',
@@ -90,11 +81,11 @@ export const profiles = [
   { name: 'Camille', cat: 'female', loc: 'makati-rockwell', areas: ['makati'], age: 29, tagline: 'Sophisticated company for business dinners and galas', bio: BIO.polished, languages: 'English, French, Filipino', nationality: 'Filipino-French', height: 170, attributes: ATTR('170 cm', 'Chestnut, wavy', 'Hazel', 'Glamorous', 'Fashion, opera, tennis'), rates: RATES_C, schedule: WEEKENDS, featured: true, verified: true, palette: ['#2d2620', '#c9a46b'] },
   { name: 'Mika', cat: 'female', loc: 'cebu-it-park', areas: ['cebu-city', 'cebu-mactan'], age: 23, tagline: 'Island girl with a big laugh — your Cebu guide', bio: BIO.warm, languages: 'English, Cebuano, Filipino', nationality: 'Filipino', height: 158, attributes: ATTR('158 cm', 'Black, long', 'Brown', 'Sporty chic', 'Diving, food trips, karaoke'), rates: RATES_B, schedule: DAYTIME, featured: false, verified: true, palette: ['#1f3a3a', '#76b3a6'] },
   { name: 'Bianca', cat: 'female', loc: 'pasay-entertainment-city', areas: ['pasay-bay-area', 'makati'], age: 27, tagline: 'Glamorous evenings at the bay', bio: BIO.calm, languages: 'English, Filipino, Mandarin', nationality: 'Filipino-Chinese', height: 166, attributes: ATTR('166 cm', 'Black, sleek', 'Dark brown', 'Evening glam', 'Theatre, mahjong, cocktails'), rates: RATES_A, schedule: EVENINGS, featured: false, verified: false, palette: ['#33223a', '#b58bb3'] },
-  { name: 'Yuna', cat: 'female', loc: 'makati-legazpi-village', areas: ['makati', 'bgc-taguig'], age: 25, tagline: 'Gold members only — refined and discreet', bio: BIO.polished, languages: 'English, Japanese, Filipino', nationality: 'Filipino-Japanese', height: 161, attributes: ATTR('161 cm', 'Dark brown, bob', 'Brown', 'Minimal & refined', 'Tea ceremony, design, film'), rates: RATES_C, schedule: WEEKENDS, featured: true, verified: true, vipTier: 'gold', palette: ['#26252b', '#9a8f86'] },
+  { name: 'Yuna', cat: 'female', loc: 'makati-legazpi-village', areas: ['makati', 'bgc-taguig'], age: 25, tagline: 'Refined, discreet and well-travelled', bio: BIO.polished, languages: 'English, Japanese, Filipino', nationality: 'Filipino-Japanese', height: 161, attributes: ATTR('161 cm', 'Dark brown, bob', 'Brown', 'Minimal & refined', 'Tea ceremony, design, film'), rates: RATES_C, schedule: WEEKENDS, featured: true, verified: true, palette: ['#26252b', '#9a8f86'] },
   { name: 'Andrea', cat: 'female', loc: 'ortigas-pasig', areas: ['ortigas-pasig'], age: 22, tagline: 'New profile — photos coming soon', bio: BIO.warm, languages: 'English, Filipino', nationality: 'Filipino', height: 160, attributes: ATTR('160 cm', 'Brown, long', 'Brown', 'Casual', 'Books, coffee, yoga'), rates: RATES_B, schedule: DAYTIME, status: 'Draft', ageVerified: false, palette: ['#2b2f26', '#a3ad83'] },
   { name: 'Marco', cat: 'male', loc: 'bgc-high-street', areas: ['bgc-taguig', 'makati'], age: 30, tagline: 'Charming plus-one for weddings and corporate events', bio: BIO.calm, languages: 'English, Filipino, Italian', nationality: 'Filipino-Italian', height: 183, attributes: ATTR('183 cm', 'Black, short', 'Brown', 'Tailored', 'Cooking, football, wine'), rates: RATES_A, schedule: EVENINGS, featured: true, verified: true, palette: ['#1f2630', '#6d8299'] },
   { name: 'Gabriel', cat: 'male', loc: 'makati-poblacion', areas: ['makati', 'quezon-city'], age: 27, tagline: 'Laid-back conversationalist and live-music lover', bio: BIO.warm, languages: 'English, Filipino', nationality: 'Filipino', height: 178, attributes: ATTR('178 cm', 'Dark brown, wavy', 'Dark brown', 'Smart casual', 'Guitar, gigs, basketball'), rates: RATES_B, schedule: MOST, featured: false, verified: true, palette: ['#2a2622', '#9b8770'] },
-  { name: 'Rafael', cat: 'male', loc: 'cebu-lahug', areas: ['cebu-city', 'cebu-mactan'], age: 32, tagline: 'Silver members — your Cebu travel companion', bio: BIO.adventurous, languages: 'English, Cebuano, Spanish', nationality: 'Filipino', height: 180, attributes: ATTR('180 cm', 'Black, short', 'Brown', 'Resort smart', 'Sailing, diving, photography'), rates: RATES_A, schedule: DAYTIME, featured: false, verified: true, vipTier: 'silver', palette: ['#1d3036', '#6aa0ad'] },
+  { name: 'Rafael', cat: 'male', loc: 'cebu-lahug', areas: ['cebu-city', 'cebu-mactan'], age: 32, tagline: 'Your Cebu travel companion', bio: BIO.adventurous, languages: 'English, Cebuano, Spanish', nationality: 'Filipino', height: 180, attributes: ATTR('180 cm', 'Black, short', 'Brown', 'Resort smart', 'Sailing, diving, photography'), rates: RATES_A, schedule: DAYTIME, featured: false, verified: true, palette: ['#1d3036', '#6aa0ad'] },
   { name: 'Alexa', cat: 'transgender', loc: 'makati-poblacion', areas: ['makati', 'bgc-taguig'], age: 26, tagline: 'Confident, witty and unforgettable', bio: BIO.adventurous, languages: 'English, Filipino', nationality: 'Filipino', height: 172, attributes: ATTR('172 cm', 'Blonde, long', 'Brown', 'Statement fashion', 'Drag brunch, fashion, travel'), rates: RATES_A, schedule: EVENINGS, featured: true, verified: true, palette: ['#3a2430', '#d08aa0'] },
   { name: 'Danica', cat: 'transgender', loc: 'qc-tomas-morato', areas: ['quezon-city', 'ortigas-pasig'], age: 28, tagline: 'Sweet, attentive and a brilliant listener', bio: BIO.calm, languages: 'English, Filipino', nationality: 'Filipino', height: 169, attributes: ATTR('169 cm', 'Black, long', 'Dark brown', 'Feminine & soft', 'Baking, films, dancing'), rates: RATES_B, schedule: MOST, featured: false, verified: true, palette: ['#2e2433', '#a88cc0'] },
   { name: 'Kim', cat: 'transgender', loc: 'pasay-moa-complex', areas: ['pasay-bay-area'], age: 24, tagline: 'Fun nights out by the bay', bio: BIO.warm, languages: 'English, Filipino, Thai', nationality: 'Filipino-Thai', height: 165, attributes: ATTR('165 cm', 'Brown, long', 'Brown', 'Trendy', 'Concerts, gaming, food'), rates: RATES_B, schedule: WEEKENDS, featured: false, verified: false, awayDays: 5, palette: ['#262b36', '#8b99c9'] },
@@ -135,15 +126,15 @@ export const pages = [
     sections: [
       { type: 'text', heading: 'Eligibility', body: 'You must be at least 18 years old, and of legal age where you live, to use this website.' },
       { type: 'text', heading: 'Nature of the service', body: 'Companions listed here offer their time and company for social occasions. Rates are for time and companionship only. Anything else is a private matter between consenting adults and must comply with local law.' },
-      { type: 'text', heading: 'Conduct', body: 'Treat companions and staff with respect. We may decline requests or close accounts in case of abusive behaviour, repeated no-shows or misuse of the site.' },
+      { type: 'text', heading: 'Conduct', body: 'Treat companions and staff with respect. We may decline requests in case of abusive behaviour, repeated no-shows or misuse of the site.' },
     ],
   },
   {
     slug: 'privacy', title: 'Privacy policy', kicker: 'Policies', intro: 'What we collect, why, and how long we keep it.',
     sections: [
-      { type: 'list', heading: 'What we collect', items: ['Contact details you give us in a booking request or account', 'Booking history and favourites in your member account', 'Basic security logs (sign-ins, IP addresses) to protect accounts'] },
-      { type: 'text', heading: 'How we use it', body: 'Only to handle your requests, run your membership and keep the service secure. We never sell your data and we share booking details only with the companion you book.' },
-      { type: 'text', heading: 'Your choices', body: 'You can update your details, sign out other devices and ask us to delete your account at any time.' },
+      { type: 'list', heading: 'What we collect', items: ['Contact details you give us in a booking request, contact message or live chat', 'Your booking history', 'Basic security logs (IP addresses) to protect the service'] },
+      { type: 'text', heading: 'How we use it', body: 'Only to handle your requests and keep the service secure. We never sell your data and we share booking details only with the companion you book.' },
+      { type: 'text', heading: 'Your choices', body: 'You can ask us to correct or delete your details at any time.' },
     ],
   },
 ];
@@ -162,10 +153,10 @@ export const posts = [
     ] },
   { slug: 'new-verification-standard', kind: 'Announcement', title: 'Our new verification standard', excerpt: 'Every profile now shows a “last updated” date and an in-person verified badge.', loc: null,
     sections: [{ type: 'text', heading: 'What changed', body: 'We now re-check every published profile at least every 60 days and show the date of the last update on each profile.' }] },
-  { slug: 'gold-selection-preview', kind: 'News', title: 'Members preview: this month’s Gold Selection', excerpt: 'Meet the newest companions in our Gold-only collection.', loc: null, audience: 'Members', tier: 'gold',
-    sections: [{ type: 'text', heading: 'New this month', body: 'Three new companions joined the Gold Selection this month, with private galleries available to Gold and Black members.' }] },
-  { slug: 'discretion-etiquette', kind: 'Guide', title: 'Discretion and etiquette for dinner dates', excerpt: 'Simple habits that make every meeting relaxed and respectful.', loc: null, audience: 'Members',
-    sections: [{ type: 'list', heading: 'Members’ checklist', items: ['Confirm the venue the day before', 'Keep conversation light at first', 'Settle fees as agreed with the concierge', 'Share feedback through your account'] }] },
+  { slug: 'new-this-month', kind: 'News', title: 'New this month: three companions join the directory', excerpt: 'Meet the newest verified companions on Aurelia.', loc: null,
+    sections: [{ type: 'text', heading: 'New this month', body: 'Three new companions joined the directory this month. Each has passed our ID check and shows published rates and live availability.' }] },
+  { slug: 'discretion-etiquette', kind: 'Guide', title: 'Discretion and etiquette for dinner dates', excerpt: 'Simple habits that make every meeting relaxed and respectful.', loc: null,
+    sections: [{ type: 'list', heading: 'A short checklist', items: ['Confirm the venue the day before', 'Keep conversation light at first', 'Settle fees as agreed with the concierge', 'Share feedback with the concierge'] }] },
 ];
 
 export const faqs = [
@@ -175,27 +166,9 @@ export const faqs = [
   ['Booking', 'What if I only have a question?', 'Use “Send an inquiry” on any profile. The concierge will reply using your preferred contact method.', false],
   ['Verification & safety', 'Are the profiles real and verified?', 'Every published profile has passed a government ID check confirming the companion is 18 or over. Profiles with the verified badge have also been reviewed in person.', true],
   ['Verification & safety', 'How current is the information?', 'Each profile shows when it was last updated. Availability is kept up to date by our team.', false],
-  ['Membership', 'What do VIP members get?', 'Members-only collections, private galleries, exclusive guides and priority replies. Higher tiers unlock more profiles.', true],
-  ['Membership', 'How do I join or renew?', 'Create a free account, choose a tier in your account, pay using the instructions shown and enter the payment reference. We activate it after checking the payment.', false],
+  ['Booking', 'Can I chat with someone before booking?', 'Yes — use the Chat button at the bottom of any page to reach the concierge. Messages are encrypted and only read by our team.', true],
   ['Privacy', 'Will my details be shared?', 'Only the details needed for a confirmed meeting are shared with the companion you book. We never sell or publish client information.', false],
-  ['Privacy', 'Can I delete my account?', 'Yes — contact us and we’ll delete your account and personal data, except records we must keep by law.', false],
-];
-
-export const members = [
-  ['Demo', 'Member', 'demo@aurelia.example', 'gold', 60],
-  ['Paolo', 'Reyes', 'paolo.reyes@example.com', 'silver', 12],
-  ['James', 'Tan', 'james.tan@example.com', 'gold', 5],
-  ['Michael', 'Santos', 'michael.santos@example.com', null, null],
-  ['Daniel', 'Cruz', 'daniel.cruz@example.com', 'silver', -10],
-  ['Kevin', 'Lim', 'kevin.lim@example.com', 'black', 300],
-  ['Ryan', 'Garcia', 'ryan.garcia@example.com', null, null],
-  ['Anthony', 'Mendoza', 'anthony.mendoza@example.com', 'silver', 20],
-  ['Christian', 'Lopez', 'christian.lopez@example.com', null, null],
-  ['Mark', 'Villanueva', 'mark.villanueva@example.com', 'gold', 2],
-  ['Joshua', 'Ramos', 'joshua.ramos@example.com', null, null],
-  ['Patricia', 'Navarro', 'patricia.navarro@example.com', 'silver', 25],
-  ['Victor', 'Chua', 'victor.chua@example.com', null, null],
-  ['Leo', 'Aquino', 'leo.aquino@example.com', 'gold', -40],
+  ['Privacy', 'Can I have my details deleted?', 'Yes — contact us and we’ll delete your personal data, except records we must keep by law.', false],
 ];
 
 export const clients = [
@@ -206,7 +179,7 @@ export const clients = [
 ];
 
 export const inquiries = [
-  ['Tom Becker', 'tom.becker@example.com', 'VIP membership', 'Hi, can I pay for a Gold membership by card? I’m visiting from Germany next month.', 'New'],
+  ['Tom Becker', 'tom.becker@example.com', 'Rates & payment', 'Hi, can I pay the booking fee by card? I’m visiting from Germany next month.', 'New'],
   ['Sam Rivera', 'sam.rivera@example.com', 'Booking help', 'I booked last week but didn’t receive the confirmation email. Reference BK-…? Could you check?', 'New'],
   ['Nina Castro', 'nina.castro@example.com', 'Join as a companion', 'Hello! I’d like to know how to apply to be listed. What documents do you need?', 'In Progress'],
   ['Alan Wu', 'alan.wu@example.com', 'Rates & payment', 'Do your rates include travel to Mactan for a full-day booking?', 'Resolved'],
@@ -218,12 +191,10 @@ export const staff = [
   ['Manager', 'Miguel Santos', 'manager@aurelia.example'],
   ['Booking Coordinator', 'Bea Cruz', 'bookings@aurelia.example'],
   ['Profile Editor', 'Paolo Lim', 'profiles@aurelia.example'],
-  ['Membership Manager', 'Mia Tan', 'members@aurelia.example'],
   ['Content Editor', 'Carla Go', 'content@aurelia.example'],
 ];
 
 export const redirects = [
   ['/makati-companions', '/locations/makati', 'Old site URL'],
   ['/ladies', '/female', 'Old site URL'],
-  ['/vip-club', '/vip', 'Old site URL'],
 ];

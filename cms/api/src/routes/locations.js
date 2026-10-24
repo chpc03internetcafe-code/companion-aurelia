@@ -42,7 +42,7 @@ const categorySchema = {
   isActive: { type: 'bool', default: true },
 };
 // Category pages live at /<slug>; these paths belong to other pages.
-const RESERVED = ['companions', 'locations', 'guides', 'faq', 'vip', 'contact', 'account', 'favorites', 'book', 'booking-status', 'pages', 'api', 'uploads', 'sitemap-xml'];
+const RESERVED = ['companions', 'companion', 'locations', 'guides', 'faq', 'vip', 'contact', 'account', 'favorites', 'book', 'booking-status', 'pages', 'api', 'uploads', 'sitemap-xml'];
 const checkSlug = (slug) => {
   if (RESERVED.includes(slug)) throw new HttpError(422, `“${slug}” is used by another page. Choose another URL.`, { slug: 'Reserved.' });
 };
