@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { closeDb, dbKind, exec, one, q, run } from './index.js';
 import { DEFAULT_ROLES, MODULES } from '../lib/admin-auth.js';
 import { defaultSettings } from '../services/settings.js';
+import { encryptMessages } from './encrypt-messages.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,7 @@ export async function initDb({ quiet = false } = {}) {
   for (const [key, value] of Object.entries(defaultSettings)) {
     await run('INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING', [key, value]);
   }
+  await encryptMessages({ quiet: true }); // message text still stored in plain text gets encrypted
   if (!quiet) console.log(`✓ Database ready (${await dbKind()})`);
 }
 

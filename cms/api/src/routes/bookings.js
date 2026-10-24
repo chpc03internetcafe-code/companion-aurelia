@@ -13,6 +13,7 @@ import {
   addEvent, assertTransition, BOOKING_SOURCES, CONTACT_METHODS, createBooking, loadBooking, loadEvents, moveBooking, parseFees, publicBooking, quote, SELECT_BOOKING, TRANSITIONS,
 } from '../services/bookings.js';
 import { readChat, sendChat } from '../services/chat.js';
+import { encryptText } from '../lib/encryption.js';
 
 const router = Router();
 
@@ -150,7 +151,7 @@ router.put('/:id', wrap(async (req, res) => {
   const d = validate(req.body, editSchema);
   await run(`UPDATE bookings SET client_name = $1, client_email = $2, client_phone = $3, preferred_contact = $4, location_id = $5, meeting_place = $6,
     client_notes = $7, staff_notes = $8, updated_at = now() WHERE id = $9`,
-  [d.clientName, d.clientEmail, d.clientPhone, d.preferredContact, d.locationId, d.meetingPlace, d.clientNotes, d.staffNotes, id]);
+  [d.clientName, d.clientEmail, d.clientPhone, d.preferredContact, d.locationId, d.meetingPlace, encryptText(d.clientNotes), d.staffNotes, id]);
   res.json(await detail(id));
 }));
 

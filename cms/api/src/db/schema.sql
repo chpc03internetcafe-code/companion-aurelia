@@ -435,6 +435,9 @@ CREATE TABLE IF NOT EXISTS booking_messages (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_booking_messages_booking ON booking_messages(booking_id, id);
+-- Message text is stored encrypted (lib/encryption.js), which is longer than the text itself; lengths are checked by the API.
+ALTER TABLE booking_messages ALTER COLUMN body TYPE TEXT;
+ALTER TABLE booking_events ALTER COLUMN note TYPE TEXT;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS client_seen_message_id    INT NOT NULL DEFAULT 0;
 ALTER TABLE bookings ADD COLUMN IF NOT EXISTS companion_seen_message_id INT NOT NULL DEFAULT 0;
 

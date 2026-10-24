@@ -9,6 +9,7 @@ import '../env.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { closeDb, one, q, run } from './index.js';
+import { encryptMessages } from './encrypt-messages.js';
 import { initDb } from './init.js';
 
 const first = (n) => String(n || '').trim().split(/\s+/)[0];
@@ -67,6 +68,7 @@ export async function seedChat({ log = console.log, max = THREADS.length } = {})
     }
     await run('UPDATE bookings SET client_seen_message_id = $1, companion_seen_message_id = $2 WHERE id = $3', [lastClientSeen, lastCompanionSeen, b.id]);
   }
+  await encryptMessages({ quiet: true });
   log(`✓ Demo chats: ${count} messages on ${bookings.length} confirmed booking${bookings.length === 1 ? '' : 's'}`);
   return count;
 }

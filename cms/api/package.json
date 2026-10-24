@@ -11,6 +11,7 @@
     "db:sql:data": "node src/db/export-data.js",
     "db:seed": "node src/db/seed.js",
     "db:seed:chat": "node src/db/seed-chat.js",
+    "db:encrypt-messages": "node src/db/encrypt-messages.js",
     "db:reset": "node src/db/seed.js --reset",
     "admin:list": "node src/db/admin-user.js list",
     "admin:reset": "node src/db/admin-user.js reset",

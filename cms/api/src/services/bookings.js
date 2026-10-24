@@ -1,6 +1,7 @@
 // Booking requests and profile inquiries: quotes (rate + fees), creation, status changes, rescheduling.
 import { HttpError } from '../lib/http.js';
 import { newReference } from '../lib/refs.js';
+import { encryptText } from '../lib/encryption.js';
 
 export const BOOKING_STATUSES = ['Pending', 'Confirmed', 'Completed', 'Cancelled', 'Declined', 'No-Show'];
 export const INQUIRY_STATUSES = ['Pending', 'Answered', 'Closed'];
@@ -46,7 +47,7 @@ export const loadEvents = (db, bookingId, clientOnly = false) =>
 
 export async function addEvent(db, bookingId, { status = null, title, note = null, actor = null, visible = true }) {
   await db.run('INSERT INTO booking_events (booking_id, status, title, note, actor, visible_to_client) VALUES ($1, $2, $3, $4, $5, $6)',
-    [bookingId, status, title.slice(0, 150), note ? String(note).slice(0, 1000) : null, actor ? String(actor).slice(0, 150) : null, visible]);
+    [bookingId, status, title.slice(0, 150), note ? encryptText(String(note).slice(0, 1000)) : null, actor ? String(actor).slice(0, 150) : null, visible]);
 }
 
 /** What the client sees: no staff notes, internal events or member ids. */
@@ -106,7 +107,7 @@ export async function createBooking(db, d) {
        $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
      RETURNING id`,
     [reference, d.kind, d.profileId, d.rateId || null, d.rateLabel || null, d.durationMinutes || null, d.date || null, d.time || null,
-      d.locationId || null, d.meetingPlace || null, d.memberId || null, d.clientName, d.clientEmail, d.clientPhone || null, d.preferredContact || null, d.clientNotes || null,
+      d.locationId || null, d.meetingPlace || null, d.memberId || null, d.clientName, d.clientEmail, d.clientPhone || null, d.preferredContact || null, encryptText(d.clientNotes || null),
       d.ratePrice || 0, JSON.stringify(d.fees || []), d.feesTotal || 0, d.total || 0, d.status, d.source || 'Online', d.staffNotes || null]
   );
   await addEvent(db, row.id, {

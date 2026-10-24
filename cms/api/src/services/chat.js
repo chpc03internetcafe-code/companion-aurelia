@@ -11,6 +11,7 @@ import { rateLimit } from '../lib/auth.js';
 import { notify } from '../lib/mailer.js';
 import { chatMessageToClient, chatMessageToCompanion } from '../lib/emails.js';
 import { loadSettings } from './settings.js';
+import { encryptText } from '../lib/encryption.js';
 
 export const PARTIES = ['Client', 'Companion'];
 const SEEN = { Client: 'client_seen_message_id', Companion: 'companion_seen_message_id' };
@@ -62,7 +63,7 @@ export async function sendChat(b, sender, text, authorName = null) {
   await rateLimit(`chat:${sender}:${b.id}`, 30, 10 * 60000);
 
   const m = await one('INSERT INTO booking_messages (booking_id, sender, author, body) VALUES ($1, $2, $3, $4) RETURNING id',
-    [b.id, sender, authorName ? String(authorName).slice(0, 150) : null, body]);
+    [b.id, sender, authorName ? String(authorName).slice(0, 150) : null, encryptText(body)]); // stored encrypted (lib/encryption.js)
   if (SEEN[sender]) await run(`UPDATE bookings SET ${SEEN[sender]} = GREATEST(${SEEN[sender]}, $1) WHERE id = $2`, [m.id, b.id]);
 
   // email each other party for whom this is the only unread message

@@ -11,14 +11,16 @@ import '../env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { decryptText, isEncrypted } from '../lib/encryption.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.PGLITE_DIR || path.resolve(here, '../../data/pglite');
 
 const camel = (s) => s.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+// Encrypted message columns (see lib/encryption.js) are decrypted here, so every query gets plain text.
 const camelRow = (row) => {
   const out = {};
-  for (const k in row) out[camel(k)] = row[k];
+  for (const k in row) out[camel(k)] = isEncrypted(row[k]) ? decryptText(row[k]) : row[k];
   return out;
 };
 

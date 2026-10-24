@@ -17,6 +17,7 @@ import { addDays, fromMin, phDate, phMinutesNow, toMin, weekday } from '../lib/d
 import { saveImage } from '../lib/storage.js';
 import * as D from './seed-data.js';
 import { seedChat } from './seed-chat.js';
+import { encryptMessages } from './encrypt-messages.js';
 
 // ---------- deterministic randomness ----------
 let state = 20261015;
@@ -380,6 +381,7 @@ export async function seedDemo({ log = console.log } = {}) {
     log(`✓ Demo data: ${profiles.length} profiles, ${Object.keys(loc).length} locations, ${D.tiers.length} tiers, ${members.length} members, ${bookingCount} bookings, ${D.posts.length} posts`);
   });
   await seedChat({ log });
+  await encryptMessages({ quiet: true }); // demo notes and chats are stored encrypted like real ones
   log(`  (${((Date.now() - started) / 1000).toFixed(1)} s)`);
 }
 

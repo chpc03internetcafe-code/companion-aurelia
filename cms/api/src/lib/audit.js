@@ -41,13 +41,18 @@ const READ_ONLY = new Set(['settings POST email', 'bookings POST quote']);
 const LABEL_FIELDS = ['reference', 'membershipNo', 'memberNo', 'displayName', 'fullName', 'name', 'title', 'clientName', 'question', 'fromPath', 'email', 'key'];
 export const labelOf = (row) => (row ? LABEL_FIELDS.map((f) => row[f]).find((v) => v != null && v !== '') : null) ?? null;
 
-const clip = (v) => {
+// Message text is stored encrypted (lib/encryption.js); the audit trail records that it changed, not what it says.
+const PRIVATE_TEXT = new Set(['clientNotes', 'note', 'body']);
+const HIDDEN = '(private message)';
+
+const clip = (v, k) => {
+  if (PRIVATE_TEXT.has(k) && v != null && v !== '') return HIDDEN;
   if (v instanceof Date) return v.toISOString();
   if (typeof v === 'string' && v.length > MAX_TEXT) return `${v.slice(0, MAX_TEXT)}…`;
   return v;
 };
 export const clean = (row) =>
-  row ? Object.fromEntries(Object.entries(row).filter(([k, v]) => !SKIP_FIELDS.has(k) && !SECRET.test(k) && v != null && v !== '').map(([k, v]) => [k, clip(v)])) : null;
+  row ? Object.fromEntries(Object.entries(row).filter(([k, v]) => !SKIP_FIELDS.has(k) && !SECRET.test(k) && v != null && v !== '').map(([k, v]) => [k, clip(v, k)])) : null;
 
 /** { field: { from, to } } for every field whose value changed. */
 export function diff(before, after) {
@@ -56,7 +61,7 @@ export function diff(before, after) {
     if (SKIP_FIELDS.has(k) || SECRET.test(k)) continue;
     const a = clip(before?.[k] ?? null);
     const b = clip(after?.[k] ?? null);
-    if (JSON.stringify(a) !== JSON.stringify(b)) out[k] = { from: a, to: b };
+    if (JSON.stringify(a) !== JSON.stringify(b)) out[k] = PRIVATE_TEXT.has(k) ? { from: a == null ? null : HIDDEN, to: b == null ? null : HIDDEN } : { from: a, to: b };
   }
   return out;
 }
@@ -142,9 +147,9 @@ function summarize(d, label, changes, body) {
     case 'Reordered': return `Reordered ${d.entityType.toLowerCase()} list`;
     case 'Status changed': {
       const s = changes?.status;
-      return s ? `${d.entityType} ${label || d.id}: ${s.from} → ${s.to}${body?.note ? ` (${String(body.note).slice(0, 80)})` : ''}` : `Changed status of ${what}`;
+      return s ? `${d.entityType} ${label || d.id}: ${s.from} → ${s.to}${body?.note ? ' (with a message)' : ''}` : `Changed status of ${what}`;
     }
-    case 'Note added': return `Added a note to ${what}${body?.note ? `: “${String(body.note).slice(0, 120)}”` : ''}`;
+    case 'Note added': return `Added a note to ${what}`;
     case 'Password reset': return `Reset the password of ${what}`;
     case 'Password reset sent': return `Emailed a password link to ${what}`;
     case 'Rescheduled': return `Rescheduled ${what}`;

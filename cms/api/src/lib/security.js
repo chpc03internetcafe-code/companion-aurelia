@@ -119,6 +119,7 @@ export function checkProductionConfig() {
   if (setup && setup.length < 16) problems.push('ADMIN_SETUP_KEY is shorter than 16 characters; use a long random value.');
   if (process.env.SITE_URL && !process.env.SITE_URL.startsWith('https://')) problems.push('SITE_URL should start with https:// in production.');
   if (process.env.SHOW_DEV_LINKS === '1') problems.push('SHOW_DEV_LINKS is ignored in production.');
+  if (!process.env.MESSAGE_ENCRYPTION_KEY) problems.push('MESSAGE_ENCRYPTION_KEY is not set: booking chats and notes can’t be saved.');
   if ((process.env.CORS_ORIGIN || '').includes('*')) problems.push('CORS_ORIGIN must list exact origins; "*" is not supported.');
   for (const p of problems) console.warn(`[security] ${p}`);
   return problems;

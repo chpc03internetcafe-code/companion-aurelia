@@ -466,6 +466,45 @@ await check('security: headers, cross-site requests, CORS, uploads, password has
   assert.ok(out.includes(`"'=HYPERLINK(""http://evil"")"`) && out.includes("'@SUM(A1)") && out.includes(',-20'), out);
 });
 
+await check('encryption: chats, timeline notes and client notes are stored encrypted, read back as text', async () => {
+  const { driver } = await import('./index.js');
+  const raw = async (sql, p) => (await (await driver()).query(sql, p)).rows; // without the automatic decryption
+  // everything already in the database (demo data + this run) is ciphertext
+  for (const [table, col] of [['booking_messages', 'body'], ['booking_events', 'note'], ['bookings', 'client_notes']]) {
+    const [{ plain, total }] = await raw(`SELECT COUNT(*) FILTER (WHERE ${col} NOT LIKE 'enc:v1:%')::int AS plain, COUNT(*)::int AS total FROM ${table} WHERE ${col} IS NOT NULL AND ${col} <> ''`);
+    assert.ok(total > 0, `${table}.${col} has rows`);
+    assert.equal(plain, 0, `${table}.${col}: ${plain} of ${total} rows in plain text`);
+  }
+  // a new concierge message: unreadable in the database, readable through the API, not copied into the audit trail
+  const [{ id }] = await raw("SELECT id FROM bookings WHERE kind = 'Booking' AND status = 'Confirmed' ORDER BY id LIMIT 1");
+  const secret = 'Meet at the side entrance, room 1407';
+  const sent = await staff('POST', `/bookings/${id}/messages`, { body: secret });
+  assert.equal(sent.status, 201, JSON.stringify(sent.data));
+  assert.ok(sent.data.chat.messages.some((m) => m.body === secret));
+  const [stored] = await raw('SELECT id, body FROM booking_messages WHERE booking_id = $1 ORDER BY id DESC LIMIT 1', [id]);
+  assert.match(stored.body, /^enc:v1:[0-9a-f]{8}:/);
+  assert.ok(!stored.body.includes('1407'));
+  const [{ hits }] = await raw("SELECT COUNT(*)::int AS hits FROM audit_log WHERE summary LIKE '%1407%' OR changes LIKE '%1407%'");
+  assert.equal(hits, 0, 'message text must not be copied to the audit trail');
+  // a tampered value is refused (authenticated encryption) instead of showing altered text
+  const { decryptText, encryptText, resetKeys, UNREADABLE } = await import('../lib/encryption.js');
+  const flipped = stored.body.slice(0, -2) + (stored.body.at(-2) === 'A' ? 'B' : 'A') + stored.body.at(-1);
+  assert.equal(decryptText(flipped), UNREADABLE);
+  // key rotation: text written with the old key still reads once that key is listed as old
+  const before = process.env.MESSAGE_ENCRYPTION_KEY;
+  const crypto = await import('node:crypto');
+  const oldKey = crypto.randomBytes(32).toString('base64');
+  const newKey = crypto.randomBytes(32).toString('base64');
+  process.env.MESSAGE_ENCRYPTION_KEY = oldKey; resetKeys();
+  const written = encryptText('rotate me');
+  process.env.MESSAGE_ENCRYPTION_KEY = newKey; resetKeys();
+  assert.equal(decryptText(written), UNREADABLE, 'unknown key');
+  process.env.MESSAGE_ENCRYPTION_KEYS_OLD = oldKey; resetKeys();
+  assert.equal(decryptText(written), 'rotate me');
+  if (before === undefined) delete process.env.MESSAGE_ENCRYPTION_KEY; else process.env.MESSAGE_ENCRYPTION_KEY = before;
+  delete process.env.MESSAGE_ENCRYPTION_KEYS_OLD; resetKeys();
+});
+
 const total = results.length;
 console.log(`\n${passed}/${total} checks passed`);
 server.close();
