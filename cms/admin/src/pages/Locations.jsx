@@ -77,7 +77,7 @@ function Categories({ manage }) {
               <td><strong>{c.name}</strong><span className="sub">/{c.slug} · {c.description}</span></td>
               <td>{c.profileCount}</td>
               <td>{c.metaDescription ? <Pill tone="green">Described</Pill> : <Pill tone="amber">No description</Pill>}</td>
-              <td><Pill>{c.isActive ? 'Visible' : 'Hidden'}</Pill></td>
+              <td>{manage ? <Toggle checked={c.isActive} onChange={() => run(() => api.patch(`/locations/categories/${c.id}`, { isActive: !c.isActive })).then((r) => r && (setData(r), loadMeta()))} label={c.isActive ? 'Visible' : 'Hidden'} /> : <Pill>{c.isActive ? 'Visible' : 'Hidden'}</Pill>}</td>
               {manage && <td className="actions nowrap">
                 <button className="icon-btn" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
                 <button className="icon-btn" disabled={i === data.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>

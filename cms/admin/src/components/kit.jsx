@@ -327,6 +327,77 @@ export function Thumb({ src, name, w = 40, h = 50 }) {
     : <span className="thumb thumb-empty" style={{ width: w, height: h }} aria-hidden="true">{(name || '?')[0]}</span>;
 }
 
+/**
+ * Profile dropdown with a search box and photos (rows from GET /profiles/options).
+ * Search matches name, category and location; ↑ ↓ Enter pick, Esc closes.
+ */
+export function ProfilePicker({ profiles = [], value, onChange, loading }) {
+  const [open, setOpen] = useState(false);
+  const [term, setTerm] = useState('');
+  const [hi, setHi] = useState(0);
+  const box = useRef(null);
+  const list = useRef(null);
+  const current = profiles.find((p) => p.id === Number(value));
+  const words = term.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = useMemo(() => profiles.filter((p) => {
+    const text = `${p.displayName} ${p.categoryName} ${p.locationName || ''} ${p.status}`.toLowerCase();
+    return words.every((w) => text.includes(w));
+  }), [profiles, term]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => { if (!box.current?.contains(e.target)) setOpen(false); };
+    // Capture phase: the modal stops mousedown from bubbling up to the document.
+    document.addEventListener('mousedown', away, true);
+    return () => document.removeEventListener('mousedown', away, true);
+  }, [open]);
+  useEffect(() => { setHi(0); }, [term]);
+  useEffect(() => { list.current?.children[hi]?.scrollIntoView({ block: 'nearest' }); }, [hi]);
+
+  const show = () => { setTerm(''); setHi(Math.max(0, profiles.findIndex((p) => p.id === Number(value)))); setOpen(true); };
+  const pick = (p) => { onChange(String(p.id)); setOpen(false); };
+  const onKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi((i) => Math.min(shown.length - 1, i + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi((i) => Math.max(0, i - 1)); }
+    else if (e.key === 'Enter') { e.preventDefault(); if (shown[hi]) pick(shown[hi]); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setOpen(false); }
+  };
+  const row = (p) => (
+    <>
+      <Thumb src={p.photoUrl} name={p.displayName} w={36} h={44} />
+      <span className="pp-text">
+        <strong>{p.displayName}{p.age ? <span className="muted">, {p.age}</span> : null}</strong>
+        <small>{p.categoryName}{p.locationName ? ` · ${p.locationName}` : ''}</small>
+      </span>
+      {p.status !== 'Published' && <Pill>{p.status}</Pill>}
+    </>
+  );
+
+  return (
+    <div className="profile-picker" ref={box}>
+      <button type="button" className="pp-current" onClick={() => (open ? setOpen(false) : show())} aria-haspopup="listbox" aria-expanded={open} disabled={loading}>
+        {current ? row(current) : <span className="muted pp-text">{loading ? 'Loading profiles…' : 'Choose a profile…'}</span>}
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" className="pp-caret"><path d="m6 9 6 6 6-6" /></svg>
+      </button>
+      {open && (
+        <div className="pp-pop">
+          <div className="search pp-search">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+            <input type="search" autoFocus value={term} onChange={(e) => setTerm(e.target.value)} onKeyDown={onKey} placeholder="Search name, category or area…" aria-label="Search profiles" />
+          </div>
+          <div className="pp-list" role="listbox" ref={list}>
+            {shown.map((p, i) => (
+              <button type="button" key={p.id} role="option" aria-selected={p.id === Number(value)} className={`pp-option ${i === hi ? 'hi' : ''} ${p.id === Number(value) ? 'on' : ''}`}
+                onMouseEnter={() => setHi(i)} onClick={() => pick(p)}>{row(p)}</button>
+            ))}
+            {!shown.length && <p className="muted pp-empty">No profiles match “{term}”.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Character counter for SEO fields: green inside the recommended range. */
 export function Counter({ value, min, max }) {
   const n = (value || '').length;

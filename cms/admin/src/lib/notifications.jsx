@@ -21,7 +21,7 @@ const store = {
   set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } },
 };
 // With several CMS tabs open, only the first tab to see a notification plays the sound.
-const claim = (id) => {
+export const claim = (id) => {
   const k = `cms-notified-${id}`;
   if (store.get(k)) return false;
   store.set(k, '1');
@@ -30,7 +30,7 @@ const claim = (id) => {
 };
 
 let audioCtx;
-function chime() {
+export function chime() {
   try {
     audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
     const t = audioCtx.currentTime;

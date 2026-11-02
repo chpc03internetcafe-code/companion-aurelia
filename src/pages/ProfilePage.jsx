@@ -6,23 +6,19 @@ import { breadcrumbLd, useSeo } from '../utils/seo';
 import { day, duration, money, time12, timeAgo, todayIso, weekday, WEEKDAYS } from '../utils/format';
 import ProfileCard, { FavoriteButton, ShareButton } from '../components/ProfileCard';
 import { Crumbs, PageSkeleton, Photo, SectionHead } from '../components/Common';
-import { IconBack, IconCalendar, IconCheck, IconChevron, IconClock, IconGlobe, IconPin, IconPlay, IconShield } from '../components/Icons';
+import { ChatButton } from '../components/Header';
+import { IconBack, IconCalendar, IconCheck, IconChevron, IconClock, IconGlobe, IconPin, IconPlay, IconShield, IconZoomIn } from '../components/Icons';
+import Lightbox, { embed } from '../components/Lightbox';
 import NotFound from './NotFound';
-
-const embed = (url) => {
-  const yt = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]{6,})/);
-  if (yt) return `https://www.youtube-nocookie.com/embed/${yt[1]}`;
-  const vm = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
-  if (vm) return `https://player.vimeo.com/video/${vm[1]}`;
-  return null;
-};
 
 function Gallery({ p }) {
   const [i, setI] = useState(0);
+  const [zoom, setZoom] = useState(false); // the full-screen viewer, where photos can be zoomed
   const items = p.media;
   const cur = items[i];
   const go = (d) => setI((n) => (n + d + items.length) % items.length);
   useEffect(() => {
+    if (zoom) return undefined; // the viewer has its own keys
     const on = (e) => { if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
@@ -34,7 +30,10 @@ function Gallery({ p }) {
           ? (embed(cur.url)
             ? <iframe src={embed(cur.url)} title={cur.alt || `${p.name} video`} allow="encrypted-media; picture-in-picture" allowFullScreen />
             : <video src={cur.url} poster={cur.posterUrl || undefined} controls playsInline preload="metadata" aria-label={cur.alt || `${p.name} video`} />)
-          : <Photo src={cur.url} alt={cur.alt || `${p.name}`} name={p.name} priority={i === 0} />}
+          : <button type="button" className="gallery-open" onClick={() => setZoom(true)} aria-label="View photo full screen">
+            <Photo src={cur.url} alt={cur.alt || `${p.name}`} name={p.name} priority={i === 0} />
+          </button>}
+        {cur && cur.kind !== 'video' && <button type="button" className="icon-btn gallery-zoom" onClick={() => setZoom(true)} aria-label="Zoom photo" title="Zoom"><IconZoomIn size={18} /></button>}
         {items.length > 1 && <>
           <button className="icon-btn gallery-nav prev" onClick={() => go(-1)} aria-label="Previous photo"><IconBack size={18} /></button>
           <button className="icon-btn gallery-nav next" onClick={() => go(1)} aria-label="Next photo"><IconChevron size={18} /></button>
@@ -50,6 +49,7 @@ function Gallery({ p }) {
           ))}
         </div>
       )}
+      {zoom && items.length > 0 && <Lightbox items={items} index={i} name={p.name} onIndex={setI} onClose={() => setZoom(false)} />}
     </div>
   );
 }
@@ -169,6 +169,7 @@ export default function ProfilePage() {
               {canBook && <Link to={`/book/${p.slug}`} className="btn btn-primary btn-lg" style={{ flex: 1 }}><IconCalendar size={18} />Request a booking</Link>}
               <Link to={`/book/${p.slug}?kind=inquiry`} className="btn btn-ghost btn-lg" style={{ flex: canBook ? 'none' : 1 }}>Send an inquiry</Link>
             </div>
+            {site.liveChatEnabled === '1' && <ChatButton className="btn btn-soft profile-chat" context={{ profileId: p.id, name: p.name }}>Chat about {p.name}</ChatButton>}
           </div>
         </div>
       </div>

@@ -4,10 +4,12 @@ import { api } from '../lib/api';
 import { useUi } from '../lib/ui';
 import { moduleForPath, useAuth } from '../lib/auth';
 import { NOTIFY_MODULES, useNotifications } from '../lib/notifications';
+import { useLiveChatFeed } from '../lib/live-chat-feed';
 import { Avatar, Loading, Modal } from './kit';
 import NotificationBell from './NotificationBell';
 import { IdleWarning, useIdleTimeout } from '../lib/idle';
 import { ChangePasswordForm } from '../pages/Login';
+import { TwoStepPanel } from './TwoStep';
 
 const NAV = [
   ['Agency', [
@@ -32,17 +34,20 @@ const NAV = [
 
 export default function Layout() {
   const { metaError, loadMeta, meta, toast } = useUi();
-  const { user, can, logout, idleLogout } = useAuth();
+  const { user, can, logout, idleLogout, updateUser } = useAuth();
   const idleLeft = useIdleTimeout(meta?.site?.idleMinutes, idleLogout);
   const { unread } = useNotifications();
   const [open, setOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
+  const [twoStepOpen, setTwoStepOpen] = useState(false);
   const [badges, setBadges] = useState({});
   const [liveTick, setLiveTick] = useState(0);
   const { pathname } = useLocation();
   const site = meta?.site || {};
   const nav = NAV.map(([group, items]) => [group, items.filter((m) => m.always || can(m.module))]).filter(([, items]) => items.length);
+  // live chat: keeps the "waiting" badge current and alerts to visitor replies on every page
+  useLiveChatFeed({ pathname, onStats: (s) => s && setBadges((b) => (b.chat === s.waiting ? b : { ...b, chat: s.waiting })) });
 
   useEffect(() => {
     if (site.siteName) document.title = `${unread ? `(${unread}) ` : ''}${site.siteName} · CMS`;
@@ -111,6 +116,7 @@ export default function Layout() {
                 <div className="user-menu-pop" role="menu">
                   <div className="head"><strong>{user.name}</strong><small>{user.email} · {user.role}</small></div>
                   <button role="menuitem" onClick={() => { setMenuOpen(false); setChangingPw(true); }}>Change password</button>
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); setTwoStepOpen(true); }}>Two-step sign-in{user.twoStepEnabled ? ' · On' : ''}</button>
                   <button role="menuitem" onClick={logout}>Sign out</button>
                 </div>
               </>
@@ -121,11 +127,23 @@ export default function Layout() {
           {metaError && (
             <div className="banner-error"><strong>Can’t connect to the API.</strong> {metaError}<button className="btn btn-sm btn-ghost" onClick={loadMeta}>Retry</button></div>
           )}
+          {user.backupCodesLeft != null && (
+            <div className="banner-info">
+              You signed in with a backup code. {user.backupCodesLeft} left.
+              <button className="btn btn-sm btn-ghost" onClick={() => setTwoStepOpen(true)}>Create new codes</button>
+              <button className="btn btn-sm btn-ghost" onClick={() => updateUser({ ...user, backupCodesLeft: null })}>Dismiss</button>
+            </div>
+          )}
           {viewOnly && <div className="view-only">👁 View only — your role ({user.role}) can see this section but not change it.</div>}
           {meta ? <Suspense fallback={<div className="card"><Loading /></div>}><Outlet /></Suspense> : !metaError && <div className="card"><Loading /></div>}
         </main>
       </div>
       <IdleWarning seconds={idleLeft} onSignOut={logout} />
+      {twoStepOpen && (
+        <Modal title="Two-step sign-in" onClose={() => { setTwoStepOpen(false); if (user.backupCodesLeft != null) updateUser({ ...user, backupCodesLeft: null }); }} size="narrow">
+          <TwoStepPanel />
+        </Modal>
+      )}
       {changingPw && (
         <Modal title="Change password" onClose={() => setChangingPw(false)} size="narrow">
           <ChangePasswordForm onDone={() => { setChangingPw(false); toast('Password changed. Other devices were signed out.'); }} />

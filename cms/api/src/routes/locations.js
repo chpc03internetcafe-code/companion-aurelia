@@ -68,6 +68,10 @@ router.put('/categories/:id', wrap(async (req, res) => {
   await updateRow('categories', categorySchema, idParam(req), data);
   res.json(await listCategories());
 }));
+router.patch('/categories/:id', wrap(async (req, res) => {
+  await updateRow('categories', categorySchema, idParam(req), validate(req.body, { isActive: categorySchema.isActive }, { partial: true }));
+  res.json(await listCategories());
+}));
 router.delete('/categories/:id', wrap(async (req, res) => {
   const id = idParam(req);
   if ((await one('SELECT COUNT(*)::int AS n FROM profiles WHERE category_id = $1', [id])).n) throw new HttpError(409, 'This category has profiles. Hide it instead.');

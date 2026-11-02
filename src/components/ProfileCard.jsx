@@ -51,34 +51,39 @@ export function ShareButton({ title, text, path }) {
   );
 }
 
+// Photo first, like a gallery: the picture carries the badges, the caption below gives name, age, area and price.
 export default function ProfileCard({ p }) {
+  const place = p.location ? p.location.name : null;
   return (
     <Link to={`/companions/${p.slug}`} className="p-card">
       <div className="p-card-media">
         <Photo src={p.photoUrl} alt={p.photoAlt} name={p.name} />
         <div className="p-card-badges">
           {p.featured && <span className="badge badge-gold">Featured</span>}
-          {p.verified && <span className="badge badge-ok"><IconCheck size={12} />Verified</span>}
+          {p.verified && <span className="badge badge-ok" title="Photos and identity checked by our team"><IconCheck size={12} />Verified</span>}
         </div>
         <div className="p-card-fav"><FavoriteButton profile={p} /></div>
         <div className="p-card-over">
-          <h3>{p.name} <small>{p.age}</small></h3>
-          {p.location && <p><IconPin size={13} />{p.location.parent ? `${p.location.name}, ${p.location.parent}` : p.location.name}</p>}
+          {p.availableToday ? <span className="badge badge-live">Available today</span> : <span />}
+          <span className="p-card-media-count">
+            {p.photoCount > 0 && <span><IconCamera size={13} />{p.photoCount}</span>}
+            {p.hasVideo && <span><IconPlay size={12} /></span>}
+          </span>
         </div>
       </div>
       <div className="p-card-body">
-        <p className="p-card-tag">{p.tagline}</p>
-        <div className="p-card-meta">
-          <span>{p.priceFrom != null ? <><span className="muted">from </span><strong>{money(p.priceFrom)}</strong></> : <span className="muted">Rates on request</span>}</span>
-          <span className={`avail ${p.availableToday ? '' : 'off'}`}>{p.availableToday ? 'Today' : 'Not today'}</span>
+        <div className="p-card-title">
+          <h3>{p.name}</h3>
+          <span>{p.age}</span>
         </div>
-        <div className="p-card-meta" style={{ marginTop: 6 }}>
-          <span className="muted" style={{ fontSize: '0.78rem' }}>{p.category.name}{p.minDuration ? ` · from ${duration(p.minDuration)}` : ''}</span>
-          <span className="muted row" style={{ gap: 8, fontSize: '0.78rem' }}>
-            {p.photoCount > 0 && <span className="row" style={{ gap: 3 }}><IconCamera size={13} />{p.photoCount}</span>}
-            {p.hasVideo && <IconPlay size={13} />}
-          </span>
-        </div>
+        <p className="p-card-sub">
+          {place && <><IconPin size={13} />{place}</>}
+          {place && <span aria-hidden="true">·</span>}
+          {p.category.name}
+        </p>
+        <p className="p-card-price">
+          {p.priceFrom != null ? <><span>from</span> <strong>{money(p.priceFrom)}</strong>{p.minDuration ? <span> / {duration(p.minDuration)}</span> : null}</> : <span>Rates on request</span>}
+        </p>
       </div>
     </Link>
   );

@@ -281,6 +281,9 @@ export async function seedDemo({ log = console.log } = {}) {
     for (const [i, [group, question, answer, home]] of D.faqs.entries()) {
       await db.run('INSERT INTO faqs (group_name, question, answer, show_on_home, sort_order) VALUES ($1,$2,$3,$4,$5)', [group, question, answer, home, i]);
     }
+    for (const [i, [title, body]] of D.chatTemplates.entries()) {
+      await db.run('INSERT INTO live_chat_templates (title, body, sort_order) VALUES ($1,$2,$3)', [title, body, i]);
+    }
     for (const [from, to, note] of D.redirects) await db.run('INSERT INTO redirects (from_path, to_path, note, hits) VALUES ($1,$2,$3,$4)', [from, to, note, int(0, 40)]);
     await db.run("INSERT INTO redirects (from_path, to_path, note) VALUES ('/companions/lara', '/locations/makati', 'Retired profile')");
 
@@ -313,7 +316,7 @@ export async function seedDemo({ log = console.log } = {}) {
 }
 
 // db:reset drops these, including the unused tables of the removed member, VIP and companion portals
-const TABLES = ['live_chat_messages', 'live_chats', 'rate_limits', 'notification_reads', 'notifications', 'audit_log', 'admin_sessions', 'admin_users', 'admin_roles', 'inquiries', 'redirects', 'faqs', 'posts', 'content_pages',
+const TABLES = ['live_chat_templates', 'live_chat_messages', 'live_chats', 'rate_limits', 'notification_reads', 'notifications', 'audit_log', 'admin_mfa_challenges', 'admin_sessions', 'admin_users', 'admin_roles', 'inquiries', 'redirects', 'faqs', 'posts', 'content_pages',
   'booking_messages', 'booking_events', 'bookings', 'collection_profiles', 'collections', 'member_favorites', 'memberships', 'member_tokens', 'member_mfa_challenges', 'member_sessions', 'members', 'fees',
   'profile_change_requests', 'companion_mfa_challenges', 'companion_tokens', 'companion_sessions', 'companion_accounts',
   'profile_time_off', 'profile_schedules', 'profile_rates', 'profile_media', 'profile_areas', 'profiles', 'tiers', 'locations', 'categories', 'site_settings'];

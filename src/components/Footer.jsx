@@ -1,10 +1,11 @@
 import { Link } from 'react-router-dom';
 import { useSite } from '../context/SiteContext';
-import { Logo } from './Header';
+import { ChatButton, Logo } from './Header';
 import { IconChat, IconInstagram, IconMail, IconPhone, IconSend } from './Icons';
 
 export default function Footer() {
-  const { site, categories, cities, pages } = useSite();
+  const { site, categories, cities, areasOf, pages } = useSite();
+  const areas = cities.flatMap((c) => [c, ...areasOf(c.id)]);
   const year = new Date().getFullYear();
   return (
     <footer className="footer">
@@ -21,6 +22,7 @@ export default function Footer() {
               {site.phone && <a className="icon-btn" href={`tel:${site.phone.replace(/[^\d+]/g, '')}`} aria-label="Call"><IconPhone size={18} /></a>}
             </div>
             {site.hours && <p className="muted" style={{ marginTop: 14, fontSize: '0.84rem' }}>{site.hours}</p>}
+            <ChatButton className="btn btn-soft btn-sm" />
           </div>
           <div>
             <h2>Companions</h2>
@@ -49,6 +51,12 @@ export default function Footer() {
             </ul>
           </div>
         </div>
+        {areas.length > 1 && (
+          <nav className="footer-areas" aria-label="Areas we cover">
+            <h2>Areas we cover</h2>
+            <ul>{areas.map((l) => <li key={l.id}><Link to={`/locations/${l.slug}`} className={l.parentId ? '' : 'city'}>{l.name}</Link></li>)}</ul>
+          </nav>
+        )}
         <div className="footer-bottom">
           <span className="row"><span className="adult-badge" title="Adults only">18+</span>© {year} {site.siteName}. Adults only. All companions listed are verified to be 18 or over.</span>
           <span>Rates are for time and companionship only.</span>

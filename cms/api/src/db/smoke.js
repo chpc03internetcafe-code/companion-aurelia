@@ -65,7 +65,7 @@ await check('health + bootstrap', async () => {
   const { data } = await guest('GET', '/site/bootstrap');
   assert.ok(data.categories.length >= 3 && data.locations.length > 5);
   assert.equal(data.tiers, undefined, 'no VIP tiers any more');
-  assert.ok(data.theme.vars['--primary']);
+  assert.ok(data.theme.dark['--primary'] && data.theme.light['--primary'] && ['dark', 'light', 'auto'].includes(data.theme.mode));
 });
 
 await check('staff sign-in', async () => {
@@ -420,6 +420,41 @@ await check('live chat: visitor ↔ desk, long poll, encrypted at rest, private 
   assert.equal(hits, 0);
   const [{ notes }] = await raw("SELECT COUNT(*)::int AS notes FROM notifications WHERE body LIKE '%2210%' OR title LIKE '%2210%'");
   assert.equal(notes, 0);
+  // the desk sees the visitor typing (the CMS feed wakes when that changes), and it clears when they send
+  const typingWait = staff('GET', `/live-chat/wait?after=${reply.data.messages.at(-1).id}&typing=-`);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal((await visitor('POST', '/site/chat/typing', { typing: true })).status, 204);
+  const typingWoke = await typingWait;
+  assert.ok(typingWoke.data.typing.includes(item.id), JSON.stringify(typingWoke.data));
+  assert.equal((await staff('GET', `/live-chat/${item.id}`)).data.chat.visitorTyping, true);
+  await visitor('POST', '/site/chat/messages', { body: 'Yes please, 8 PM' });
+  assert.equal((await staff('GET', `/live-chat/${item.id}`)).data.chat.visitorTyping, false);
+  // internal notes: encrypted, seen by staff only, not a reply (no "Seen", no preview, no email)
+  const note = await staff('POST', `/live-chat/${item.id}/messages`, { body: 'Regular client, room 2210 confirmed', internal: true });
+  assert.equal(note.status, 201, JSON.stringify(note.data));
+  assert.ok(note.data.messages.some((m) => m.internal && m.body.startsWith('Regular client')));
+  assert.ok(!(await visitor('GET', '/site/chat')).data.messages.some((m) => m.body.includes('Regular client')));
+  assert.ok(!(await staff('GET', '/live-chat')).data.items.find((c) => c.reference === ref).preview.includes('Regular client'));
+  // the visitor ends the chat: it stays in the browser for the rating and transcript; notes can still be added
+  assert.equal((await visitor('POST', '/site/chat/rate', { rating: 'Good' })).status, 409, 'no rating while open');
+  const closedByVisitor = await visitor('POST', '/site/chat/close', {});
+  assert.equal(closedByVisitor.data.chat.status, 'Closed');
+  assert.equal((await staff('POST', `/live-chat/${item.id}/messages`, { body: 'Follow up next week', internal: true })).status, 201);
+  assert.equal((await staff('POST', `/live-chat/${item.id}/messages`, { body: 'Hello?' })).status, 409);
+  assert.equal((await visitor('POST', '/site/chat/rate', { rating: 'Meh' })).status, 422);
+  const rated = await visitor('POST', '/site/chat/rate', { rating: 'Bad', comment: 'Slow to answer about 2210' });
+  assert.equal(rated.data.chat.rating, 'Bad');
+  const staffView = (await staff('GET', `/live-chat/${item.id}`)).data.chat;
+  assert.equal(staffView.rating, 'Bad');
+  assert.equal(staffView.ratingComment, 'Slow to answer about 2210');
+  const [{ rating_comment: storedComment }] = await raw('SELECT rating_comment FROM live_chats WHERE id = $1', [item.id]);
+  assert.match(storedComment, /^enc:v1:/);
+  // the transcript: sent once (503 when mail isn't configured, and then it can be tried again)
+  const sent = await visitor('POST', '/site/chat/transcript', {});
+  assert.ok([200, 503].includes(sent.status), JSON.stringify(sent.data));
+  if (sent.status === 200) assert.equal((await visitor('POST', '/site/chat/transcript', {})).status, 409);
+  else assert.equal((await visitor('GET', '/site/chat')).data.chat.transcriptSent, false);
+  await staff('POST', `/live-chat/${item.id}/reopen`);
   // closing: the visitor can't write any more; a new chat replaces it
   const closed = await staff('POST', `/live-chat/${item.id}/close`);
   assert.equal(closed.data.chat.status, 'Closed');
@@ -431,6 +466,86 @@ await check('live chat: visitor ↔ desk, long poll, encrypted at rest, private 
   // every live chat message in the database is ciphertext
   const [{ plain }] = await raw("SELECT COUNT(*)::int AS plain FROM live_chat_messages WHERE body NOT LIKE 'enc:v1:%'");
   assert.equal(plain, 0);
+});
+
+await check('staff two-step sign-in (authenticator app + backup codes)', async () => {
+  const { totpCode } = await import('../lib/totp.js');
+  const pw = 'aurelia2026';
+  const email = 'content@aurelia.example';
+  // nobody can require it for everyone before using it themselves
+  assert.equal((await staff('PUT', '/settings', { staffTwoStepRequired: '1' })).status, 409);
+
+  // setup needs the password; nothing changes until a code from the new secret is confirmed
+  const editor = client();
+  assert.equal((await editor('POST', '/admin/auth/login', { email, password: pw })).data.user.twoStepEnabled, false);
+  assert.equal((await editor('POST', '/admin/auth/2fa/setup', { password: 'wrong' })).status, 422);
+  const setup = (await editor('POST', '/admin/auth/2fa/setup', { password: pw })).data;
+  assert.match(setup.otpauthUrl, /^otpauth:\/\/totp\/.+secret=/);
+  assert.match(setup.qr, /^data:image\/png;base64,/);
+  assert.equal((await editor('POST', '/admin/auth/2fa/enable', { code: '000000' })).status, 422);
+  const now = Date.now();
+  const on = await editor('POST', '/admin/auth/2fa/enable', { code: totpCode(setup.secret, now), signOutOthers: false });
+  assert.equal(on.status, 200, JSON.stringify(on.data));
+  assert.equal(on.data.backupCodes.length, 10);
+  assert.equal(on.data.user.twoStepEnabled, true);
+  const [stored] = await q('SELECT totp_backup_codes FROM admin_users WHERE email = $1', [email]);
+  assert.ok(!stored.totpBackupCodes.includes(on.data.backupCodes[0].replace('-', '')), 'backup codes are stored hashed');
+
+  // a correct password alone gives no session, only a challenge
+  const fresh = client();
+  const first = await fresh('POST', '/admin/auth/login', { email, password: pw });
+  assert.equal(first.data.mfaRequired, true);
+  assert.equal(first.data.user, undefined);
+  assert.equal((await fresh('GET', '/admin/auth/me')).data.user, null);
+  assert.equal((await fresh('POST', '/admin/auth/login/2fa', { token: first.data.mfaToken, code: '123456' })).status, 422);
+  const next = totpCode(setup.secret, now + 30000); // the next 30-second step (the one used to enable can't be reused)
+  const second = await fresh('POST', '/admin/auth/login/2fa', { token: first.data.mfaToken, code: next });
+  assert.equal(second.status, 200, JSON.stringify(second.data));
+  assert.equal(second.data.user.email, email);
+  assert.equal((await fresh('GET', '/content/pages')).status, 200);
+  // the same code can't be replayed, and the challenge can't be reused
+  const again = await client()('POST', '/admin/auth/login', { email, password: pw });
+  assert.equal((await client()('POST', '/admin/auth/login/2fa', { token: again.data.mfaToken, code: next })).status, 422);
+  assert.equal((await client()('POST', '/admin/auth/login/2fa', { token: first.data.mfaToken, code: next })).status, 410);
+
+  // a backup code works once
+  const viaBackup = await client()('POST', '/admin/auth/login/2fa', { token: again.data.mfaToken, code: on.data.backupCodes[1].toLowerCase() });
+  assert.equal(viaBackup.status, 200, JSON.stringify(viaBackup.data));
+  assert.equal(viaBackup.data.backupCodesLeft, 9);
+  const third = await client()('POST', '/admin/auth/login', { email, password: pw });
+  assert.equal((await client()('POST', '/admin/auth/login/2fa', { token: third.data.mfaToken, code: on.data.backupCodes[1] })).status, 422);
+  // five wrong codes end the challenge
+  for (let i = 0; i < 4; i++) await client()('POST', '/admin/auth/login/2fa', { token: third.data.mfaToken, code: '000000' });
+  assert.equal((await client()('POST', '/admin/auth/login/2fa', { token: third.data.mfaToken, code: '000000' })).status, 410);
+
+  // the admin requires it for everyone (after setting up their own); staff without it can only set it up
+  const adminSetup = (await staff('POST', '/admin/auth/2fa/setup', { password: pw })).data;
+  const adminOn = (await staff('POST', '/admin/auth/2fa/enable', { code: totpCode(adminSetup.secret), signOutOthers: false })).data;
+  assert.equal((await staff('PUT', '/settings', { staffTwoStepRequired: '1' })).status, 200);
+  const { id: editorId } = (await staff('GET', '/admin/users')).data.find((u) => u.email === email);
+  assert.equal((await coordinator('POST', `/admin/users/${editorId}/two-step/reset`)).status, 403, 'needs the Users permission');
+  const reset = await staff('POST', `/admin/users/${editorId}/two-step/reset`);
+  assert.equal(reset.status, 200);
+  assert.equal(reset.data.twoStepSince, null);
+  assert.equal((await fresh('GET', '/content/pages')).status, 401, 'signed out everywhere');
+  const forced = client();
+  const forcedLogin = await forced('POST', '/admin/auth/login', { email, password: pw });
+  assert.equal(forcedLogin.data.user.mustSetUpTwoStep, true);
+  const blocked = await forced('GET', '/content/pages');
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.data.details.code, 'two_step_required');
+  assert.equal((await forced('GET', '/admin/auth/2fa')).data.required, true);
+  // and can't turn it off while it's required
+  assert.equal((await staff('POST', '/admin/auth/2fa/disable', { password: pw, code: adminOn.backupCodes[0] })).status, 409);
+
+  // put things back: rule off, admin turns their own off with a backup code
+  assert.equal((await staff('PUT', '/settings', { staffTwoStepRequired: '0' })).status, 200);
+  assert.equal((await forced('GET', '/content/pages')).status, 200);
+  const off = await staff('POST', '/admin/auth/2fa/disable', { password: pw, code: adminOn.backupCodes[0] });
+  assert.equal(off.status, 200, JSON.stringify(off.data));
+  assert.equal(off.data.enabled, false);
+  const logged = await q("SELECT action FROM audit_log WHERE action IN ('Two-step sign-in on', 'Two-step sign-in off', 'Two-step sign-in reset')");
+  assert.ok(logged.length >= 4, `audit entries: ${logged.length}`);
 });
 
 const total = results.length;

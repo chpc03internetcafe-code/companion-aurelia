@@ -182,10 +182,50 @@ export function liveChatReply(site, c) {
   };
 }
 
+// Live chat: the transcript the visitor asked for after the chat ended (the one email with message text in it).
+// rows: { sender, body, createdAt, profileName, profileSlug }, without staff notes.
+const phTime = (at) => new Date(at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+export function liveChatTranscript(site, c, to, rows) {
+  const who = (m) => (m.sender === 'Visitor' ? firstName(c.visitorName) : m.sender === 'Staff' ? 'Concierge' : '');
+  const card = (m) => (m.profileName ? `Profile: ${m.profileName}${siteUrl() && m.profileSlug ? ` — ${siteUrl()}/companions/${m.profileSlug}` : ''}` : '');
+  const lines = rows.map((m) => ({ who: who(m), at: phTime(m.createdAt), body: [card(m), m.body].filter(Boolean).join('\n') }));
+  const html = lines.map((l) => (l.who
+    ? `<p style="margin:0 0 12px;line-height:1.5"><strong>${esc(l.who)}</strong> <span style="color:#7d7266;font-size:12px">${esc(l.at)}</span><br><span style="white-space:pre-wrap">${esc(l.body)}</span></p>`
+    : `<p style="margin:0 0 12px;color:#7d7266;font-size:13px;text-align:center">${esc(l.body)} · ${esc(l.at)}</p>`)).join('');
+  return {
+    to,
+    subject: `Your chat transcript ${c.reference} — ${site.siteName}`,
+    html: layout(site, {
+      heading: 'Your chat with our concierge',
+      intro: `Hi ${esc(firstName(c.visitorName))}, here is the conversation you asked for (${esc(c.reference)}). Times are Philippine time.`,
+      body: `<div style="margin:8px 0 0;padding:16px;background:#faf7f1;border-radius:10px">${html}</div>`,
+      footnote: 'You asked for this transcript from the chat window. Keep it somewhere private.',
+    }),
+    text: text([`Your chat with our concierge (${c.reference}). Times are Philippine time.`, '', ...lines.map((l) => (l.who ? `${l.who} · ${l.at}\n${l.body}\n` : `— ${l.body} · ${l.at} —\n`))]),
+  };
+}
+
 export function testEmail(site) {
   return {
     subject: `Test email from ${site.siteName}`,
     html: layout(site, { heading: 'Email is working', intro: 'This test message was sent from the CMS. Booking, membership and contact emails will be delivered from this account.' }),
     text: 'Email is working.',
+  };
+}
+
+// ---------- Staff account security ----------
+// To a staff member about their own CMS account. `resetBy` = the administrator who reset it.
+export function twoStepChanged(site, { name, email, enabled, resetBy = null }) {
+  const what = enabled ? 'turned on' : resetBy ? 'reset' : 'turned off';
+  return {
+    to: email,
+    subject: `Two-step sign-in ${what} — ${site.siteName} CMS`,
+    html: layout(site, {
+      heading: `Two-step sign-in ${what}`,
+      intro: enabled
+        ? `Hi ${esc(firstName(name))}, signing in to your CMS account now also needs a code from your authenticator app. Keep your backup codes somewhere safe.`
+        : `Hi ${esc(firstName(name))}, two-step sign-in was ${resetBy ? `reset by ${esc(resetBy)}` : 'turned off'} for your CMS account, so only your password is needed to sign in${resetBy ? ' until you set it up again' : ''}. If you didn’t expect this, tell an administrator right away.`,
+    }),
+    text: `Two-step sign-in was ${what} for your CMS account${resetBy ? ` by ${resetBy}` : ''}. If you did not expect this, tell an administrator right away.`,
   };
 }

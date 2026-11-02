@@ -42,11 +42,14 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const expired = () => setState((s) => ({ ...s, user: null, expired: !!s.user }));
     const mustChange = () => setState((s) => (s.user ? { ...s, user: { ...s.user, mustChangePassword: true } } : s));
+    const mustTwoStep = () => setState((s) => (s.user ? { ...s, user: { ...s.user, mustSetUpTwoStep: true } } : s));
     window.addEventListener('auth:expired', expired);
     window.addEventListener('auth:password-change', mustChange);
+    window.addEventListener('auth:two-step-required', mustTwoStep);
     return () => {
       window.removeEventListener('auth:expired', expired);
       window.removeEventListener('auth:password-change', mustChange);
+      window.removeEventListener('auth:two-step-required', mustTwoStep);
     };
   }, []);
 
@@ -54,7 +57,19 @@ export function AuthProvider({ children }) {
     markActive();
     setState((s) => ({ ...s, user, setup: { ...s.setup, needed: false }, expired: false }));
   };
-  const login = async (email, password, remember) => signedIn((await api.post('/admin/auth/login', { email, password, remember })).user);
+  // Returns { mfaToken } when the account uses two-step sign-in; the session starts after verifyTwoStep.
+  const login = async (email, password, remember) => {
+    const r = await api.post('/admin/auth/login', { email, password, remember });
+    if (r.mfaRequired) return { mfaToken: r.mfaToken };
+    signedIn(r.user);
+    return {};
+  };
+  const verifyTwoStep = async (token, code) => {
+    const r = await api.post('/admin/auth/login/2fa', { token, code });
+    signedIn({ ...r.user, backupCodesLeft: r.backupCodesLeft }); // set after a backup code, so the CMS can say how many are left
+  };
+  // after turning two-step sign-in on or off: the new user flags (twoStepEnabled / mustSetUpTwoStep)
+  const updateUser = (user) => user && setState((s) => ({ ...s, user }));
   const setupFirstAdmin = async (body) => signedIn((await api.post('/admin/auth/setup', body)).user);
   const changePassword = async (currentPassword, newPassword) => signedIn((await api.post('/admin/auth/password', { currentPassword, newPassword })).user);
   const signOut = async (expired) => {
@@ -66,7 +81,7 @@ export function AuthProvider({ children }) {
   const can = useCallback((module, level = 'view') => !!state.user && RANK[state.user.permissions?.[module] || 'none'] >= RANK[level], [state.user]);
 
   return (
-    <AuthContext.Provider value={{ ...state, refresh, login, logout, idleLogout, setupFirstAdmin, changePassword, can }}>
+    <AuthContext.Provider value={{ ...state, refresh, login, verifyTwoStep, updateUser, logout, idleLogout, setupFirstAdmin, changePassword, can }}>
       {children}
     </AuthContext.Provider>
   );

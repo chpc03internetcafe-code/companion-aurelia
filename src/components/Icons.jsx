@@ -31,3 +31,12 @@ export const IconChat = (p) => <I {...p} d="M4 18.5V6a2 2 0 0 1 2-2h12a2 2 0 0 1
 export const IconInstagram = (p) => <I {...p}><rect x="3.5" y="3.5" width="17" height="17" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17.2" cy="6.8" r="0.6" fill="currentColor" /></I>;
 export const IconSend = (p) => <I {...p} d="M21 3 3 10.5l7 2.5 2.5 7L21 3ZM10 13l4.5-4.5" />;
 export const IconBell = (p) => <I {...p}><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></I>;
+export const IconHome = (p) => <I {...p}><path d="M4 10.5 12 4l8 6.5V20h-5.5v-5.5h-5V20H4Z" /></I>;
+export const IconGrid = (p) => <I {...p}><rect x="4" y="4" width="7" height="7" rx="1.5" /><rect x="13" y="4" width="7" height="7" rx="1.5" /><rect x="4" y="13" width="7" height="7" rx="1.5" /><rect x="13" y="13" width="7" height="7" rx="1.5" /></I>;
+export const IconWhatsapp = (p) => <I {...p}><path d="M4 20l1.2-3.6A8 8 0 1 1 8 19.1L4 20Z" /><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.6-2-1-1 .9a4.5 4.5 0 0 1-2.3-2.3l.9-1-1-2L9.5 8Z" /></I>;
+export const IconArrow = (p) => <I {...p} d="M5 12h14M13 6l6 6-6 6" />;
+export const IconSun = (p) => <I {...p}><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" /></I>;
+export const IconMoon = (p) => <I {...p} d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />;
+export const IconZoomIn = (p) => <I {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5M8 11h6M11 8v6" /></I>;
+export const IconZoomOut = (p) => <I {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5M8 11h6" /></I>;
+export const IconExpand = (p) => <I {...p} d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />;

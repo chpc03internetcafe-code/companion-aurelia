@@ -6,7 +6,7 @@ import { Empty } from './components/kit';
 import { UiProvider } from './lib/ui';
 import { AuthProvider, useAuth } from './lib/auth';
 import { NotificationsProvider } from './lib/notifications';
-import { ForcePasswordScreen, LoginScreen, SetupScreen } from './pages/Login';
+import { ForcePasswordScreen, ForceTwoStepScreen, LoginScreen, SetupScreen } from './pages/Login';
 import Dashboard from './pages/Dashboard';
 // Sections are separate chunks, downloaded the first time a section is opened.
 const named = (load, name) => lazy(() => load().then((m) => ({ default: m[name] })));
@@ -46,6 +46,7 @@ function App() {
   if (setup?.needed) return <SetupScreen />;
   if (!user) return <LoginScreen />;
   if (user.mustChangePassword) return <ForcePasswordScreen />;
+  if (user.mustSetUpTwoStep) return <ForceTwoStepScreen />;
   return (
     <UiProvider>
       <NotificationsProvider>

@@ -1,7 +1,9 @@
-// First-run setup, sign-in, forced password change, and the change-password form.
+// First-run setup, sign-in (with the two-step code when it's on), forced password change and two-step setup,
+// and the change-password form.
 import { useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { Field } from '../components/kit';
+import { cleanCode, TwoStepPanel } from '../components/TwoStep';
 
 function AuthShell({ children }) {
   const { setup } = useAuth();
@@ -25,9 +27,11 @@ function AuthShell({ children }) {
   );
 }
 
-export function LoginScreen() {
-  const { login, expired } = useAuth();
-  const [form, setForm] = useState({ email: '', password: '', remember: false });
+// Second sign-in step: a code from the authenticator app, or a backup code.
+function TwoStepForm({ token, onRestart }) {
+  const { verifyTwoStep } = useAuth();
+  const [backup, setBackup] = useState(false);
+  const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const submit = async (e) => {
@@ -35,7 +39,46 @@ export function LoginScreen() {
     setBusy(true);
     setError('');
     try {
-      await login(form.email, form.password, form.remember);
+      await verifyTwoStep(token, code);
+    } catch (err) {
+      if (err.details.code === 'mfa_expired') return onRestart(err.message);
+      setError(err.message);
+      setCode('');
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <h1>Two-step sign-in</h1>
+      <p className="muted">{backup ? 'Enter one of the backup codes you saved. Each code works once.' : 'Open your authenticator app and enter the 6-digit code for this CMS.'}</p>
+      <form onSubmit={submit}>
+        {backup
+          ? <Field label="Backup code" error={error}><input className="otp-input" value={code} onChange={(e) => setCode(cleanCode(e.target.value).toUpperCase())} placeholder="XXXX-XXXX" autoComplete="off" autoFocus required /></Field>
+          : <Field label="Authentication code" error={error}><input className="otp-input" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" pattern="\d{6}" autoComplete="one-time-code" placeholder="123456" autoFocus required /></Field>}
+        <button className="btn btn-primary btn-lg" disabled={busy}>{busy ? 'Checking…' : 'Verify'}</button>
+      </form>
+      <div className="row between" style={{ marginTop: 14 }}>
+        <button type="button" className="link" onClick={() => { setBackup(!backup); setCode(''); setError(''); }}>{backup ? 'Use the authenticator app' : 'Lost your phone? Use a backup code'}</button>
+        <button type="button" className="link" onClick={() => onRestart()}>Cancel</button>
+      </div>
+      {backup && <p className="muted" style={{ fontSize: 12.5 }}>No backup codes either? Ask an administrator to reset two-step sign-in for your account.</p>}
+    </>
+  );
+}
+
+export function LoginScreen() {
+  const { login, expired } = useAuth();
+  const [form, setForm] = useState({ email: '', password: '', remember: false });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [mfaToken, setMfaToken] = useState(null);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const r = await login(form.email, form.password, form.remember);
+      if (r.mfaToken) setMfaToken(r.mfaToken);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -43,6 +86,9 @@ export function LoginScreen() {
     }
   };
   const demo = import.meta.env.DEV;
+  if (mfaToken) {
+    return <AuthShell><TwoStepForm token={mfaToken} onRestart={(msg) => { setMfaToken(null); setForm({ ...form, password: '' }); setError(msg || ''); }} /></AuthShell>;
+  }
   return (
     <AuthShell>
       <h1>Staff sign-in</h1>
@@ -141,6 +187,18 @@ export function ForcePasswordScreen() {
       <h1>Choose a new password</h1>
       <p className="muted">Hi {user.name.split(' ')[0]}, you signed in with a temporary password. Please choose your own to continue.</p>
       <div style={{ marginTop: 16 }}><ChangePasswordForm forced /></div>
+      <button className="link" style={{ marginTop: 14 }} onClick={logout}>Sign out</button>
+    </AuthShell>
+  );
+}
+
+export function ForceTwoStepScreen() {
+  const { logout, user } = useAuth();
+  return (
+    <AuthShell>
+      <h1>Set up two-step sign-in</h1>
+      <p className="muted">Hi {user.name.split(' ')[0]}, every staff account must use a code from an authenticator app as well as a password. It takes about a minute.</p>
+      <div style={{ marginTop: 16 }}><TwoStepPanel forced /></div>
       <button className="link" style={{ marginTop: 14 }} onClick={logout}>Sign out</button>
     </AuthShell>
   );

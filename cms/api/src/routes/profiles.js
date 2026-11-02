@@ -87,7 +87,8 @@ router.get('/stats', wrap(async (_req, res) => {
 
 // Picker for staff bookings: profiles with their active rates.
 router.get('/options', wrap(async (_req, res) => {
-  const rows = await q(`SELECT p.id, p.display_name, p.slug, p.status, c.name AS category_name, l.name AS location_name,
+  const rows = await q(`SELECT p.id, p.display_name, p.slug, p.status, p.age, c.name AS category_name, l.name AS location_name,
+      (SELECT url FROM profile_media m WHERE m.profile_id = p.id AND m.kind = 'photo' ORDER BY m.is_primary DESC, m.sort_order, m.id LIMIT 1) AS photo_url,
       COALESCE((SELECT json_agg(json_build_object('id', r.id, 'label', r.label, 'durationMinutes', r.duration_minutes, 'price', r.price) ORDER BY r.sort_order, r.duration_minutes)
                 FROM profile_rates r WHERE r.profile_id = p.id AND r.is_active), '[]') AS rates
     FROM profiles p JOIN categories c ON c.id = p.category_id LEFT JOIN locations l ON l.id = p.base_location_id

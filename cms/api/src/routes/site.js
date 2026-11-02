@@ -11,7 +11,7 @@ import { rateLimit, throttle } from '../lib/auth.js';
 import { logEvent } from '../lib/audit.js';
 import { notify } from '../lib/mailer.js';
 import { bookingReceived, bookingToDesk, inquiryReceipt, inquiryToDesk, siteUrl } from '../lib/emails.js';
-import { themeVars } from '../lib/themes.js';
+import { siteTheme } from '../lib/themes.js';
 import { newReference } from '../lib/refs.js';
 import { bookingCancelledNote, bookingNote, bookingRescheduledNote, inquiryNote, notifyStaff } from '../lib/notifications.js';
 import { bookingRules, loadSettings } from '../services/settings.js';
@@ -56,7 +56,7 @@ async function bootstrap() {
   return {
     site: Object.fromEntries(PUBLIC_SETTINGS.map((k) => [k, s[k] || ''])),
     rules: { leadHours: rules.leadHours, windowDays: rules.windowDays, cancelCutoffHours: rules.cancelCutoffHours, rescheduleLimit: rules.rescheduleLimit, autoConfirm: rules.autoConfirm },
-    theme: { id: s.theme, vars: themeVars(s.theme) },
+    theme: siteTheme(s),
     today: phDate(),
     categories, locations, pages, faqs, stats,
     durations: durations.map((d) => d.durationMinutes),
@@ -71,14 +71,15 @@ router.get('/home', wrap(async (req, res) => {
 }));
 
 async function homeLists() {
-  const [featured, recent, availableToday, posts] = await Promise.all([
+  const [gallery, featured, recent, availableToday, posts] = await Promise.all([
+    searchProfiles({}, { pageSize: 12 }),
     searchProfiles({ featured: '1' }, { pageSize: 8 }),
     searchProfiles({ sort: 'updated' }, { pageSize: 8 }),
     searchProfiles({ available: 'today', sort: 'active' }, { pageSize: 1 }),
     q(`SELECT slug, kind, title, excerpt, cover_url, cover_alt, published_at FROM posts
        WHERE is_published ORDER BY is_pinned DESC, published_at DESC NULLS LAST LIMIT 3`),
   ]);
-  return { featured: featured.items, recent: recent.items, availableTodayCount: availableToday.total, posts };
+  return { gallery: gallery.items, galleryTotal: gallery.total, featured: featured.items, recent: recent.items, availableTodayCount: availableToday.total, posts };
 }
 
 // ---------- Directory ----------

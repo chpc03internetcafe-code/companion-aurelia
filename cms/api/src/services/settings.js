@@ -24,6 +24,8 @@ export const defaultSettings = {
   heroTitle: 'Exceptional company, verified and on your schedule.',
   heroText: 'Browse verified profiles by city and availability, see published rates up front, and send a booking request in minutes.',
   theme: DEFAULT_THEME,
+  themeMode: '',            // 'dark' | 'light' | 'auto' (visitor's device); empty = the theme's own default
+  themeSwitch: '1',         // 1 = visitors can switch between light and dark from the header
   currency: 'PHP',
   // adults-only notice shown before the site opens (remembered per browser)
   ageGateEnabled: '1',
@@ -39,9 +41,15 @@ export const defaultSettings = {
   // live chat widget on the website (answered in CMS → Live chat)
   liveChatEnabled: '1',
   liveChatGreeting: 'Hi! Ask us anything about companions, bookings or VIP membership. Our concierge usually replies within a few minutes during desk hours.',
+  liveChatHoursEnabled: '0',  // 1 = the desk keeps the hours below (Manila time); outside them visitors leave an email
+  // { "0": ["10:00", "22:00"], … } by weekday, 0 = Sunday; a missing day is closed; a close time before the open time runs past midnight
+  liveChatHours: JSON.stringify(Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, ['10:00', '22:00']]))),
+  liveChatOfflineMessage: 'We’re away right now. Leave your message and email, and we’ll reply as soon as we’re back.',
   bookingPolicy: 'Requests are confirmed by our concierge, usually within an hour during desk hours. You can cancel or reschedule online up to the cut-off shown on your booking. Fees are shown before you confirm and are settled directly as agreed with the concierge.',
   // CMS sign-out after this many minutes without activity (0 = never)
   staffIdleMinutes: '30',     // CMS
+  // 1 = every staff account must use two-step sign-in (authenticator app) to open the CMS
+  staffTwoStepRequired: '0',
   // SEO
   seoTitleSuffix: ' · Aurelia Companions',
   seoDefaultDescription: 'Verified companion directory with published rates, live availability, city guides and online booking requests.',

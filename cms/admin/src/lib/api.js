@@ -22,9 +22,10 @@ async function request(method, url, body) {
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    // session ended (signed out elsewhere, expired, disabled) or a new password is required
+    // session ended (signed out elsewhere, expired, disabled), or a new password / two-step setup is required
     if (res.status === 401 && !url.startsWith('/admin/auth/')) window.dispatchEvent(new Event('auth:expired'));
     if (res.status === 403 && data.details?.code === 'password_change_required') window.dispatchEvent(new Event('auth:password-change'));
+    if (res.status === 403 && data.details?.code === 'two_step_required') window.dispatchEvent(new Event('auth:two-step-required'));
     throw new ApiError(res.status, data.error || `Request failed (${res.status})`, data.details);
   }
   return data;

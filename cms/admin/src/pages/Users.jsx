@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useUi } from '../lib/ui';
-import { dateTime } from '../lib/format';
+import { dateTime, day } from '../lib/format';
 import { Avatar, ErrorBox, Field, Loading, Modal, PageHead, Pill, Toggle, useAction, useForm, useLoad } from '../components/kit';
 
 const tempPassword = () => `Aurelia-${Math.random().toString(36).slice(2, 6)}${Math.floor(1000 + Math.random() * 9000)}`;
@@ -39,6 +39,10 @@ export default function Users() {
     const pw = await prompt({ title: `Reset ${u.fullName}’s password?`, message: 'They’ll be signed out everywhere and must choose a new password at next sign-in. Share this temporary password with them securely.', label: 'Temporary password', defaultValue: tempPassword(), required: true, confirmLabel: 'Reset password' });
     if (pw && await run(() => api.post(`/admin/users/${u.id}/password`, { password: pw }))) toast(`Password reset. Temporary password: ${pw}`);
   };
+  const resetTwoStep = async (u) => {
+    const ok = await confirm({ title: `Reset two-step sign-in for ${u.fullName}?`, message: 'Only do this after confirming who you’re talking to (for example, a call back on a number you already have). They’ll be signed out everywhere and can sign in with just their password, then set it up again.', confirmLabel: 'Reset two-step', danger: true });
+    if (ok && await run(() => api.post(`/admin/users/${u.id}/two-step/reset`), 'Two-step sign-in reset')) users.reload(true);
+  };
   const remove = async (u) => {
     if (await confirm({ title: `Delete ${u.fullName}?`, message: 'Their audit history is kept. Consider disabling instead.', danger: true, confirmLabel: 'Delete' }) && await run(() => api.del(`/admin/users/${u.id}`), 'User deleted')) users.reload(true);
   };
@@ -49,16 +53,18 @@ export default function Users() {
         actions={manage && <button className="btn btn-primary" onClick={() => setModal({})}>+ Add user</button>} />
       <div className="card">
         <table className="table">
-          <thead><tr><th>Name</th><th>Role</th><th className="hide-sm">Last sign-in</th><th>Status</th>{manage && <th />}</tr></thead>
+          <thead><tr><th>Name</th><th>Role</th><th className="hide-sm">Last sign-in</th><th className="hide-sm">Two-step</th><th>Status</th>{manage && <th />}</tr></thead>
           <tbody>{users.data.map((u) => (
             <tr key={u.id}>
               <td><div className="row" style={{ flexWrap: 'nowrap' }}><Avatar name={u.fullName} size={34} /><div><strong>{u.fullName}</strong>{u.id === me.id && <> <Pill tone="teal">You</Pill></>}<span className="sub">{u.email}</span></div></div></td>
               <td>{u.roleName}</td>
               <td className="hide-sm">{u.lastLoginAt ? dateTime(u.lastLoginAt) : <span className="muted">Never</span>}{u.mustChangePassword && <span className="sub">Temporary password</span>}</td>
+              <td className="hide-sm">{u.twoStepSince ? <Pill tone="green" title={`On since ${day(u.twoStepSince)}`}>On</Pill> : <Pill tone="grey">Off</Pill>}</td>
               <td><Pill>{u.status}</Pill></td>
               {manage && <td className="actions">
                 <button className="btn btn-sm btn-ghost" onClick={() => setModal(u)}>Edit</button>{' '}
-                {u.id !== me.id && <><button className="btn btn-sm btn-ghost" onClick={() => reset(u)}>Reset password</button>{' '}<button className="btn btn-sm btn-danger-ghost" onClick={() => remove(u)}>Delete</button></>}
+                {u.id !== me.id && <><button className="btn btn-sm btn-ghost" onClick={() => reset(u)}>Reset password</button>{' '}
+                  {u.twoStepSince && <><button className="btn btn-sm btn-ghost" onClick={() => resetTwoStep(u)}>Reset two-step</button>{' '}</>}<button className="btn btn-sm btn-danger-ghost" onClick={() => remove(u)}>Delete</button></>}
               </td>}
             </tr>
           ))}</tbody>

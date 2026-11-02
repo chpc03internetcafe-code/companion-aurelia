@@ -198,3 +198,6 @@ export const redirects = [
   ['/makati-companions', '/locations/makati', 'Old site URL'],
   ['/ladies', '/female', 'Old site URL'],
 ];
+
+// Live chat saved replies (also offered in the CMS as samples)
+export { SAMPLE_TEMPLATES as chatTemplates } from '../lib/chat-templates.js';

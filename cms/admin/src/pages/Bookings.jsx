@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth';
 import { useUi } from '../lib/ui';
 import { useLiveRefresh } from '../lib/notifications';
 import { addDays, dateTime, dayLong, duration, money, time12, todayIso } from '../lib/format';
-import { Empty, ErrorBox, Field, Loading, Modal, PageHead, Pager, Pill, SearchBox, Stats, Thumb, Toggle, useForm, useLoad, useQueryState } from '../components/kit';
+import { Empty, ErrorBox, Field, Loading, Modal, PageHead, Pager, Pill, ProfilePicker, SearchBox, Stats, Thumb, Toggle, useForm, useLoad, useQueryState } from '../components/kit';
 
 /** Day strip + start times for a profile/rate (staff view: ignores nothing, shows why a day is closed). */
 export function SlotPicker({ profileId, rateId, duration: dur, exclude, date, time, onChange }) {
@@ -53,7 +53,7 @@ function NewBooking({ onClose, onSaved, preset = {} }) {
             <Field label="Type"><select value={form.kind} onChange={set('kind')}><option>Booking</option><option>Inquiry</option></select></Field>
             <Field label="Source"><select value={form.source} onChange={set('source')}>{meta.bookingSources.map((s) => <option key={s}>{s}</option>)}</select></Field>
             <Field label="Profile" error={errors.profileId} required className="span-2">
-              <select value={form.profileId} onChange={(e) => setForm({ ...form, profileId: e.target.value, rateId: '', date: '', time: '' })}><option value="">Choose…</option>{(profiles.data || []).map((p) => <option key={p.id} value={p.id}>{p.displayName} · {p.categoryName}{p.locationName ? ` · ${p.locationName}` : ''}{p.status !== 'Published' ? ` (${p.status})` : ''}</option>)}</select>
+              <ProfilePicker profiles={profiles.data || []} loading={profiles.loading} value={form.profileId} onChange={(id) => setForm({ ...form, profileId: id, rateId: '', date: '', time: '' })} />
             </Field>
             {form.kind === 'Booking' && <Field label="Session" error={errors.rateId} required className="span-2">
               <select value={form.rateId} onChange={(e) => setForm({ ...form, rateId: e.target.value, time: '' })}><option value="">Choose…</option>{(profile?.rates || []).map((r) => <option key={r.id} value={r.id}>{r.label} · {duration(r.durationMinutes)} · {money(r.price, true)}</option>)}</select>

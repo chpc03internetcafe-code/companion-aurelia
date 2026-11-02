@@ -2,6 +2,9 @@
 //
 // - Staff sign in with email + password; the session is a random token in an httpOnly cookie,
 //   stored as a SHA-256 hash in admin_sessions.
+// - With two-step sign-in on, a correct password only gives a short-lived challenge token; the session starts
+//   once a code from the authenticator app (or a one-time backup code) is entered. Settings can require it
+//   for every staff account.
 // - Each user has one role; a role grants, per CMS module, "none", "view" or "manage".
 //   Reading (GET) needs view, any change needs manage. The system Administrator role always has
 //   full access. Permissions are read from the database on every request, so role changes and
@@ -10,6 +13,8 @@ import crypto from 'node:crypto';
 import { one, run } from '../db/index.js';
 import { HttpError } from './http.js';
 import { readCookie, sha256, writeCookie } from './auth.js';
+import { normalizeBackupCode, verifyTotp } from './totp.js';
+import { loadSettings } from '../services/settings.js';
 
 // CMS modules that a role can be given access to, in menu order.
 export const MODULES = [
@@ -100,7 +105,7 @@ export const currentAdmin = (req) => adminFromToken(readCookie(req, COOKIE));
 export async function adminFromToken(token) {
   if (!token) return null;
   const row = await one(
-    `SELECT u.id, u.full_name, u.email, u.must_change_password, u.role_id,
+    `SELECT u.id, u.full_name, u.email, u.must_change_password, u.role_id, u.totp_enabled_at,
             r.name AS role_name, r.permissions, r.is_system, s.id AS session_id
      FROM admin_sessions s
      JOIN admin_users u ON u.id = s.user_id
@@ -118,8 +123,74 @@ export async function adminFromToken(token) {
     role: row.roleName,
     isAdministrator: row.isSystem,
     mustChangePassword: row.mustChangePassword,
+    twoStepEnabled: !!row.totpEnabledAt,
+    mustSetUpTwoStep: !row.totpEnabledAt && (await twoStepRequired()),
     permissions: effectivePermissions(row),
   };
+}
+
+// ---------- Two-step sign-in (authenticator app) ----------
+const CHALLENGE_MINUTES = 10;
+export const MAX_MFA_ATTEMPTS = 5;
+
+/** Site Settings → Security: every staff account must use two-step sign-in. */
+export const twoStepRequired = async () => (await loadSettings()).staffTwoStepRequired === '1';
+
+/** After a correct password: a short-lived token the browser sends back with the authenticator code. */
+export async function createMfaChallenge(userId, remember) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  await run('DELETE FROM admin_mfa_challenges WHERE expires_at < now()');
+  await run('INSERT INTO admin_mfa_challenges (user_id, token_hash, remember, expires_at) VALUES ($1, $2, $3, $4)', [
+    userId, sha256(token), !!remember, new Date(Date.now() + CHALLENGE_MINUTES * 60000),
+  ]);
+  return token;
+}
+
+/** The pending challenge as { id, userId, remember, attempts }, or null. */
+export async function findMfaChallenge(token) {
+  if (typeof token !== 'string' || token.length < 20 || token.length > 100) return null;
+  return one('SELECT id, user_id, remember, attempts FROM admin_mfa_challenges WHERE token_hash = $1 AND expires_at > now()', [sha256(token)]);
+}
+
+/**
+ * Checks an authenticator code or an unused backup code against the user's confirmed secret and uses it up.
+ * Returns 'app', 'backup' or null.
+ */
+export async function consumeSecondFactor(userId, code) {
+  const u = await one('SELECT totp_secret, totp_last_step, totp_backup_codes FROM admin_users WHERE id = $1', [userId]);
+  if (!u?.totpSecret) return null;
+  const step = verifyTotp(u.totpSecret, code, u.totpLastStep == null ? -1 : Number(u.totpLastStep));
+  if (step != null) {
+    // conditional, so two requests racing with the same code can't both succeed
+    const n = await run('UPDATE admin_users SET totp_last_step = $1::bigint WHERE id = $2 AND (totp_last_step IS NULL OR totp_last_step < $1::bigint)', [step, userId]);
+    return n ? 'app' : null;
+  }
+  const backup = normalizeBackupCode(code);
+  const hashes = JSON.parse(u.totpBackupCodes || '[]');
+  if (backup.length !== 8 || !hashes.includes(sha256(backup))) return null;
+  const n = await run('UPDATE admin_users SET totp_backup_codes = $1 WHERE id = $2 AND totp_backup_codes = $3', [
+    JSON.stringify(hashes.filter((h) => h !== sha256(backup))), userId, u.totpBackupCodes,
+  ]);
+  return n ? 'backup' : null;
+}
+
+export const hashBackupCodes = (codes) => JSON.stringify(codes.map((c) => sha256(normalizeBackupCode(c))));
+
+export async function twoStepStatus(userId) {
+  const u = await one('SELECT totp_enabled_at, totp_backup_codes FROM admin_users WHERE id = $1', [userId]);
+  return {
+    enabled: !!u.totpEnabledAt,
+    enabledAt: u.totpEnabledAt,
+    backupCodesLeft: u.totpEnabledAt ? JSON.parse(u.totpBackupCodes || '[]').length : 0,
+    required: await twoStepRequired(),
+  };
+}
+
+/** Turns two-step sign-in off (also used by an administrator when someone lost their phone and backup codes). */
+export async function clearTwoStep(userId) {
+  await run(`UPDATE admin_users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_last_step = NULL,
+      totp_backup_codes = NULL, updated_at = now() WHERE id = $1`, [userId]);
+  await run('DELETE FROM admin_mfa_challenges WHERE user_id = $1', [userId]);
 }
 
 // ---------- Middleware ----------
@@ -127,6 +198,7 @@ async function resolve(req) {
   req.admin = await currentAdmin(req);
   if (!req.admin) throw new HttpError(401, 'Please sign in to the CMS.');
   if (req.admin.mustChangePassword) throw new HttpError(403, 'Please set a new password before continuing.', { code: 'password_change_required' });
+  if (req.admin.mustSetUpTwoStep) throw new HttpError(403, 'Please set up two-step sign-in before continuing.', { code: 'two_step_required' });
 }
 
 export const requireAdmin = async (req, _res, next) => {

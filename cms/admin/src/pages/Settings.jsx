@@ -7,9 +7,9 @@ import { ErrorBox, Field, Loading, Modal, PageHead, Pill, Tabs, Toggle, useActio
 
 const GROUPS = {
   general: ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl', 'telegramUrl', 'whatsappUrl', 'currency'],
-  homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText', 'liveChatEnabled', 'liveChatGreeting'],
+  homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText', 'liveChatEnabled', 'liveChatGreeting', 'liveChatHoursEnabled', 'liveChatHours', 'liveChatOfflineMessage'],
   booking: ['autoConfirm', 'bookingLeadHours', 'bookingWindowDays', 'cancelCutoffHours', 'rescheduleLimit', 'slotMinutes', 'bufferMinutes', 'bookingPolicy'],
-  security: ['staffIdleMinutes'],
+  security: ['staffIdleMinutes', 'staffTwoStepRequired'],
 };
 const IDLE_FIELDS = [
   ['staffIdleMinutes', 'CMS staff', 'Staff using this CMS'],
@@ -29,7 +29,99 @@ function SettingsForm({ initial, keys, manage, onSaved, children }) {
   );
 }
 
+// Live chat desk hours: { "0": ["10:00", "22:00"], … } by weekday (0 = Sunday); a missing day is closed.
+const WEEK = [[1, 'Monday'], [2, 'Tuesday'], [3, 'Wednesday'], [4, 'Thursday'], [5, 'Friday'], [6, 'Saturday'], [0, 'Sunday']];
+const readHours = (v) => { try { const h = JSON.parse(v || '{}'); return h && typeof h === 'object' ? h : {}; } catch { return {}; } };
+function DeskHours({ value, onChange, error }) {
+  const hours = readHours(value);
+  const update = (day, span) => {
+    const next = { ...hours };
+    if (span) next[day] = span; else delete next[day];
+    onChange(JSON.stringify(next));
+  };
+  return (
+    <div className="desk-hours">
+      {WEEK.map(([day, label]) => {
+        const span = hours[day];
+        return (
+          <div key={day} className="desk-day">
+            <Toggle checked={!!span} onChange={(on) => update(day, on ? ['10:00', '22:00'] : null)} label={label} />
+            {span ? (
+              <div className="row">
+                <input type="time" value={span[0]} onChange={(e) => update(day, [e.target.value, span[1]])} aria-label={`${label} opens`} required />
+                <span className="muted">to</span>
+                <input type="time" value={span[1]} onChange={(e) => update(day, [span[0], e.target.value])} aria-label={`${label} closes`} required />
+                {span[1] <= span[0] && <small className="muted">next day</small>}
+              </div>
+            ) : <span className="muted">Closed</span>}
+          </div>
+        );
+      })}
+      {error && <small className="error" role="alert">{error}</small>}
+    </div>
+  );
+}
+
 const flag = (form, setForm, key) => ({ checked: form[key] === '1', onChange: (v) => setForm({ ...form, [key]: v ? '1' : '0' }) });
+
+// Website theme: the colours (each theme has a dark and a light palette) and which palette visitors see.
+const MODES = [
+  ['dark', 'Dark', 'Dark backgrounds for everyone'],
+  ['light', 'Light', 'Light backgrounds for everyone'],
+  ['auto', 'Match the device', 'Light or dark, following each visitor’s phone or computer setting'],
+];
+
+function ThemePreview({ vars, label }) {
+  return (
+    <div style={{ flex: 1, minWidth: 0, borderRadius: 10, background: `linear-gradient(135deg, ${vars['--hero-a']}, ${vars['--bg']})`, border: `1px solid ${vars['--line']}`, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <span style={{ color: vars['--text-2'], fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</span>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <span style={{ background: vars['--primary'], color: vars['--on-primary'], padding: '5px 10px', borderRadius: 999, fontWeight: 700, fontSize: 12 }}>Book</span>
+        <span style={{ background: vars['--surface'], color: vars['--text'], padding: '5px 10px', borderRadius: 8, fontSize: 12, border: `1px solid ${vars['--line']}` }}>Profile</span>
+      </div>
+    </div>
+  );
+}
+
+function ThemeTab({ s, themes, manage, onSaved }) {
+  const { toast } = useUi();
+  const current = themes.find((t) => t.id === s.theme) || themes[0];
+  const mode = ['dark', 'light', 'auto'].includes(s.themeMode) ? s.themeMode : current.scheme;
+  const save = async (patch, message = 'Website theme updated') => {
+    try { onSaved(await api.put('/settings', patch)); toast(message); } catch (err) { toast(err.message, 'error'); }
+  };
+  const shown = mode === 'auto' ? ['dark', 'light'] : [mode];
+  return (
+    <div className="stack">
+      <div className="card card-pad stack">
+        <h2>Appearance</h2>
+        <p className="muted" style={{ margin: 0 }}>Which version of the theme visitors see. Every theme below has a dark and a light version.</p>
+        <div className="seg" role="radiogroup" aria-label="Appearance" style={{ alignSelf: 'flex-start', flexWrap: 'wrap' }}>
+          {MODES.map(([id, label, hint]) => (
+            <button key={id} type="button" role="radio" aria-checked={mode === id} className={mode === id ? 'on' : ''} disabled={!manage} title={hint}
+              onClick={() => { if (mode !== id) save({ themeMode: id }); }}>{label}</button>
+          ))}
+        </div>
+        <small className="muted">{MODES.find(([id]) => id === mode)[2]}.</small>
+        <Toggle checked={s.themeSwitch === '1'} disabled={!manage} label="Let visitors switch between light and dark"
+          hint="Adds a sun / moon button to the website header; each visitor’s choice is remembered in their browser"
+          onChange={(v) => save({ themeSwitch: v ? '1' : '0' })} />
+      </div>
+      <div className="grid-3">
+        {themes.map((t) => (
+          <button key={t.id} type="button" className="card card-pad stack" disabled={!manage} style={{ textAlign: 'left', cursor: manage ? 'pointer' : 'default', borderColor: s.theme === t.id ? 'var(--primary)' : undefined, boxShadow: s.theme === t.id ? '0 0 0 2px var(--primary-soft)' : undefined }}
+            onClick={() => { if (s.theme !== t.id) save({ theme: t.id }); }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {shown.map((sc) => <ThemePreview key={sc} vars={t[sc]} label={sc === 'dark' ? 'Dark' : 'Light'} />)}
+            </div>
+            <strong>{t.name} {s.theme === t.id && <Pill tone="green">In use</Pill>}</strong>
+            <span className="muted">{t.description}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function FeeModal({ fee, onClose, onSaved }) {
   const { meta } = useUi();
@@ -142,26 +234,21 @@ export default function Settings() {
                 <h2 style={{ marginTop: 12 }}>Live chat</h2>
                 <Toggle {...flag(form, setForm, 'liveChatEnabled')} label="Show the live chat button on the website" hint="Chats are answered under Live chat and stored encrypted" />
                 <Field label="Greeting" error={errors.liveChatGreeting} hint="First thing visitors see when they open the chat"><textarea rows={3} value={form.liveChatGreeting} onChange={set('liveChatGreeting')} /></Field>
+                <Toggle {...flag(form, setForm, 'liveChatHoursEnabled')} label="Keep desk hours" hint="Philippine time. Outside these hours the chat says when you’re back and visitors must leave an email" />
+                {form.liveChatHoursEnabled === '1' && (
+                  <>
+                    <DeskHours value={form.liveChatHours} onChange={(v) => setForm({ ...form, liveChatHours: v })} error={errors.liveChatHours} />
+                    <Field label="Away message" error={errors.liveChatOfflineMessage} hint="Shown instead of the greeting outside desk hours">
+                      <textarea rows={3} value={form.liveChatOfflineMessage} onChange={set('liveChatOfflineMessage')} />
+                    </Field>
+                  </>
+                )}
               </div>
             </div>
           )}
         </SettingsForm>
       )}
-      {q.tab === 'theme' && (
-        <div className="grid-3">
-          {data.themes.map((t) => (
-            <button key={t.id} type="button" className="card card-pad stack" disabled={!manage} style={{ textAlign: 'left', cursor: manage ? 'pointer' : 'default', borderColor: s.theme === t.id ? 'var(--primary)' : undefined, boxShadow: s.theme === t.id ? '0 0 0 2px var(--primary-soft)' : undefined }}
-              onClick={async () => { if (s.theme !== t.id) saved(await api.put('/settings', { theme: t.id })); }}>
-              <div style={{ height: 90, borderRadius: 10, background: `linear-gradient(135deg, ${t.vars['--hero-a']}, ${t.vars['--bg']})`, border: '1px solid var(--line)', padding: 12, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-                <span style={{ background: t.vars['--primary'], color: t.vars['--on-primary'], padding: '6px 12px', borderRadius: 999, fontWeight: 700, fontSize: 12 }}>Book</span>
-                <span style={{ background: t.vars['--surface'], color: t.vars['--text'], padding: '6px 12px', borderRadius: 8, fontSize: 12, border: `1px solid ${t.vars['--line']}` }}>Profile</span>
-              </div>
-              <strong>{t.name} {s.theme === t.id && <Pill tone="green">In use</Pill>}</strong>
-              <span className="muted">{t.description}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {q.tab === 'theme' && <ThemeTab s={s} themes={data.themes} manage={manage} onSaved={saved} />}
       {q.tab === 'booking' && (
         <SettingsForm key="booking" initial={s} keys={GROUPS.booking} manage={manage} onSaved={saved}>
           {({ form, set, setForm, errors }) => (
@@ -187,18 +274,27 @@ export default function Settings() {
       )}
       {q.tab === 'security' && (
         <SettingsForm key="security" initial={s} keys={GROUPS.security} manage={manage} onSaved={saved}>
-          {({ form, set, errors }) => (
-            <div className="card card-pad stack">
-              <div>
-                <h2>Sign out of the CMS after inactivity</h2>
-                <p className="muted" style={{ margin: '4px 0 0' }}>Signs people out when they haven’t used the site for this many minutes, even with “Keep me signed in” ticked. A warning appears a minute before, with the option to stay signed in. Enter 0 to turn it off.</p>
+          {({ form, set, setForm, errors }) => (
+            <div className="stack">
+              <div className="card card-pad stack">
+                <div>
+                  <h2>Two-step sign-in</h2>
+                  <p className="muted" style={{ margin: '4px 0 0' }}>Each staff member can turn on a 6-digit code from an authenticator app (account menu → Two-step sign-in). Require it so a stolen password alone can never open the CMS. Staff without it are asked to set it up at their next sign-in, before they can do anything else.</p>
+                </div>
+                <Toggle {...flag(form, setForm, 'staffTwoStepRequired')} label="Require two-step sign-in for all staff" hint={errors.staffTwoStepRequired || 'Turn it on for your own account first. See who has it under Team → Users.'} />
               </div>
-              <div className="form-grid cols-3">
-                {IDLE_FIELDS.map(([key, label, hint]) => (
-                  <Field key={key} label={`${label} (minutes)`} error={errors[key]} hint={hint}>
-                    <input type="number" min={0} max={1440} value={form[key]} onChange={set(key)} />
-                  </Field>
-                ))}
+              <div className="card card-pad stack">
+                <div>
+                  <h2>Sign out of the CMS after inactivity</h2>
+                  <p className="muted" style={{ margin: '4px 0 0' }}>Signs people out when they haven’t used the site for this many minutes, even with “Keep me signed in” ticked. A warning appears a minute before, with the option to stay signed in. Enter 0 to turn it off.</p>
+                </div>
+                <div className="form-grid cols-3">
+                  {IDLE_FIELDS.map(([key, label, hint]) => (
+                    <Field key={key} label={`${label} (minutes)`} error={errors[key]} hint={hint}>
+                      <input type="number" min={0} max={1440} value={form[key]} onChange={set(key)} />
+                    </Field>
+                  ))}
+                </div>
               </div>
             </div>
           )}

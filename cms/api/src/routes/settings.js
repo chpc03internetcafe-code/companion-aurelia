@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { one, q, run } from '../db/index.js';
 import { HttpError, idParam, wrap } from '../lib/http.js';
 import { insertRow, reorder, updateRow, validate } from '../lib/validate.js';
-import { THEME_IDS, themeList } from '../lib/themes.js';
+import { THEME_IDS, THEME_MODES, themeList } from '../lib/themes.js';
 import { mailConfigured, sendMail } from '../lib/mailer.js';
 import { testEmail } from '../lib/emails.js';
 import { loadSettings } from '../services/settings.js';
@@ -14,6 +14,17 @@ const router = Router();
 const url = { type: 'string', max: 300, pattern: /^https?:\/\/\S+$/, patternMessage: 'Enter a full link starting with https://' };
 const numberText = (min, max, label) => ({ type: 'string', max: 6, label, check: (v) => (Number.isFinite(Number(v)) && Number(v) >= min && Number(v) <= max ? null : `Enter ${min} to ${max}.`) });
 const flag = { type: 'enum', values: ['0', '1'] };
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const deskHours = { type: 'string', max: 600, label: 'Desk hours', check: (v) => {
+  let h;
+  try { h = JSON.parse(v); } catch { return 'Desk hours are not valid.'; }
+  if (!h || typeof h !== 'object' || Array.isArray(h)) return 'Desk hours are not valid.';
+  for (const [day, span] of Object.entries(h)) {
+    if (!/^[0-6]$/.test(day) || !Array.isArray(span) || span.length !== 2 || !span.every((t) => TIME.test(t))) return 'Use times like 09:00 for every open day.';
+    if (span[0] === span[1]) return 'Opening and closing times must differ.';
+  }
+  return null;
+} };
 const settingsSchema = {
   siteName: { type: 'string', required: true, max: 120, label: 'Site name' },
   logoText: { type: 'string', required: true, max: 20, label: 'Logo text' },
@@ -34,11 +45,16 @@ const settingsSchema = {
   heroTitle: { type: 'string', max: 120 },
   heroText: { type: 'string', max: 300 },
   theme: { type: 'enum', values: THEME_IDS, label: 'Theme' },
+  themeMode: { type: 'enum', values: THEME_MODES, label: 'Appearance' },
+  themeSwitch: flag,
   currency: { type: 'enum', values: ['PHP', 'USD', 'EUR', 'GBP', 'SGD', 'HKD', 'AUD', 'THB'], label: 'Currency' },
   ageGateEnabled: flag,
   ageGateText: { type: 'string', max: 600 },
   liveChatEnabled: flag,
   liveChatGreeting: { type: 'string', max: 400 },
+  liveChatHoursEnabled: flag,
+  liveChatHours: deskHours,
+  liveChatOfflineMessage: { type: 'string', max: 400 },
   autoConfirm: flag,
   bookingLeadHours: numberText(0, 168, 'Lead time'),
   bookingWindowDays: numberText(1, 365, 'Booking window'),
@@ -48,6 +64,7 @@ const settingsSchema = {
   bufferMinutes: numberText(0, 240, 'Buffer'),
   bookingPolicy: { type: 'string', max: 2000 },
   staffIdleMinutes: numberText(0, 1440, 'Staff idle sign-out'),
+  staffTwoStepRequired: flag,
 };
 
 const listFees = () => q('SELECT f.*, l.name AS location_name FROM fees f LEFT JOIN locations l ON l.id = f.location_id ORDER BY f.sort_order, f.id');
@@ -61,6 +78,10 @@ router.get('/', wrap(async (_req, res) => res.json(await everything())));
 
 router.put('/', wrap(async (req, res) => {
   const data = validate(req.body, settingsSchema, { partial: true });
+  // so whoever turns the rule on has already been through the setup they're asking everyone else to do
+  if (data.staffTwoStepRequired === '1' && !req.admin.twoStepEnabled) {
+    throw new HttpError(409, 'Turn on two-step sign-in for your own account first (account menu → Two-step sign-in).', { staffTwoStepRequired: 'Set it up for your own account first.' });
+  }
   for (const [k, v] of Object.entries(data)) {
     await run('INSERT INTO site_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()', [k, v ?? '']);
   }

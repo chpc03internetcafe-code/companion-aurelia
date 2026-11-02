@@ -85,6 +85,7 @@ function Faqs({ manage }) {
   if (loading && !data) return <Loading />;
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   const groups = [...new Set(data.map((f) => f.groupName))];
+  const patch = (f, body) => run(() => api.patch(`/content/faqs/${f.id}`, body)).then((r) => r && setData(r));
   const move = (i, d) => {
     const order = data.map((f) => f.id);
     [order[i], order[i + d]] = [order[i + d], order[i]];
@@ -100,8 +101,8 @@ function Faqs({ manage }) {
             <tr key={f.id}>
               <td><strong>{f.question}</strong><span className="sub" style={{ maxWidth: 520, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{f.answer}</span></td>
               <td>{f.groupName}</td>
-              <td>{f.showOnHome ? '✓' : ''}</td>
-              <td><Pill>{f.isPublished ? 'Published' : 'Hidden'}</Pill></td>
+              <td>{manage ? <Toggle checked={f.showOnHome} onChange={() => patch(f, { showOnHome: !f.showOnHome })} label={f.showOnHome ? 'On home' : 'Off'} /> : (f.showOnHome ? '✓' : '')}</td>
+              <td>{manage ? <Toggle checked={f.isPublished} onChange={() => patch(f, { isPublished: !f.isPublished })} label={f.isPublished ? 'Published' : 'Hidden'} /> : <Pill>{f.isPublished ? 'Published' : 'Hidden'}</Pill>}</td>
               {manage && <td className="actions nowrap">
                 <button className="icon-btn" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
                 <button className="icon-btn" disabled={i === data.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>

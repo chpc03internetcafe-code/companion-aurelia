@@ -15,6 +15,7 @@
     "db:reset": "node src/db/seed.js --reset",
     "admin:list": "node src/db/admin-user.js list",
     "admin:reset": "node src/db/admin-user.js reset",
+    "admin:reset-2fa": "node src/db/admin-user.js reset-2fa",
     "test:smoke": "node src/db/smoke.js"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "multer": "^2.5.0",
     "nodemailer": "^10.2.1",
     "pg": "^8.23.1",
+    "qrcode": "^1.5.4",
     "sharp": "^0.35.5"
   }
 }

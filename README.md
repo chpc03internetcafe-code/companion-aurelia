@@ -54,6 +54,7 @@ npm run db:init       # create missing tables/roles/settings (safe to re-run)
 npm run test:smoke    # 21 end-to-end API checks (stop the dev server first when using the embedded DB)
 npm run admin:list    # list staff accounts
 npm run admin:reset -- someone@example.com   # print a new temporary password
+npm run admin:reset-2fa -- someone@example.com   # turn off two-step sign-in (lost phone and backup codes)
 ```
 
 > **Careful:** every command above uses `DATABASE_URL` from `cms/api/.env`. If that points at Supabase, `db:reset` wipes it and `test:smoke` writes test records and sends real email. To test locally, blank those variables for the command, e.g. `DATABASE_URL= GMAIL_USER= GMAIL_APP_PASSWORD= npm run test:smoke`.
@@ -175,6 +176,7 @@ The embedded database is for local development only. The API refuses to start on
 
 ## Security
 - **Sessions:** httpOnly, SameSite=Lax cookies (staff sign-in, live chat); only a SHA-256 of each token is stored. Nothing secret is kept in `localStorage`/`sessionStorage`; a guest's booking reference + email is kept in memory only.
+- **Two-step sign-in (staff):** a 6-digit code from an authenticator app (TOTP, RFC 6238: Google Authenticator, Microsoft Authenticator, Authy, 1Password…) after the password, set up from the account menu → Two-step sign-in. A correct password alone only gets a 10-minute challenge (5 tries); codes can't be replayed; 10 one-time backup codes are stored as SHA-256 hashes. Site Settings → Security can require it for every staff account: anyone without it must set it up before they can open anything else. Administrators can reset it for someone who lost their phone (Team → Users), or from the command line with `npm run admin:reset-2fa`. Staff are emailed when it's turned on, off or reset, and every step is in the audit trail.
 - **Passwords:** scrypt (N=2^16, r=8, p=2) with a random salt. Older hashes are upgraded at the next sign-in. Common passwords and passwords containing the email are refused. Unknown emails take as long to check as wrong passwords.
 - **Rate limits:** staff sign-in (per IP + email and per account), booking lookup, booking, contact and live chat forms are counted in the `rate_limits` table, shared by every instance. A per-IP ceiling (`RATE_LIMIT_READS`/`RATE_LIMIT_WRITES` per minute) applies to all API calls. Set `TRUST_PROXY` when self-hosting behind a proxy.
 - **Database:** every query uses `$n` parameters. Row level security is on for every table with no policies, and Supabase's `anon`/`authenticated` roles have no grants. The API connects as the owner. Re-run `supabase-setup.sql` on an existing database to apply this.
