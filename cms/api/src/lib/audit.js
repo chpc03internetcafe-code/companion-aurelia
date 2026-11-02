@@ -40,7 +40,7 @@ const LABEL_FIELDS = ['reference', 'displayName', 'fullName', 'name', 'title', '
 export const labelOf = (row) => (row ? LABEL_FIELDS.map((f) => row[f]).find((v) => v != null && v !== '') : null) ?? null;
 
 // Message text is stored encrypted (lib/encryption.js); the audit trail records that it changed, not what it says.
-const PRIVATE_TEXT = new Set(['clientNotes', 'note', 'body']);
+const PRIVATE_TEXT = new Set(['clientNotes', 'note', 'body', 'message', 'staffNotes']);
 const HIDDEN = '(private message)';
 
 const clip = (v, k) => {

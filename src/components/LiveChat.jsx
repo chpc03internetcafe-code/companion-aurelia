@@ -271,8 +271,10 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
       toast(err.message, 'error');
     } finally { setBusy(false); }
   };
+  const [confirmEnd, setConfirmEnd] = useState(false); // "End this chat?"
   // ends the chat but keeps it here, for the rating and the transcript
   const end = async () => {
+    setConfirmEnd(false);
     typingSignal.stop();
     try {
       onSent(await api('POST', '/site/chat/close', { after: lastMessageId() }));
@@ -295,7 +297,7 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
           <span className="lc-status"><i className={`lc-dot${thread?.online ? ' on' : ''}`} aria-hidden="true" />
             {thread?.online ? 'Online now' : thread?.desk && !thread.desk.open ? `Away${thread.desk.opensAt ? ` · back ${thread.desk.opensAt}` : ''}` : 'We’ll reply as soon as we can'}</span>
         </div>
-        {chat?.status === 'Open' && <button type="button" className="link lc-end" onClick={end}>End chat</button>}
+        {chat?.status === 'Open' && <button type="button" className="link lc-end" onClick={() => setConfirmEnd(true)}>End chat</button>}
         <button type="button" className={`icon-btn lc-mute${muted ? ' is-muted' : ''}`} onClick={onMute} aria-pressed={!muted}
           aria-label="Reply sounds" title={muted ? 'Reply sounds off' : 'Reply sounds on'}><IconBell size={17} /></button>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="Close the chat"><IconClose size={18} /></button>
@@ -338,7 +340,47 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
           </>
         )}
       <p className="lc-note"><IconLock size={13} /> Messages are encrypted and only read by our concierge.</p>
+      {confirmEnd && chat?.status === 'Open' && (
+        <ConfirmDialog title="End this chat?" confirmLabel="End chat" onConfirm={end} onCancel={() => setConfirmEnd(false)}>
+          You won’t be able to send more messages in this chat. You can still rate it, and start a new chat any time.
+        </ConfirmDialog>
+      )}
     </section>
+  );
+}
+
+/**
+ * A confirmation over the chat window: Cancel has focus first, Tab stays inside, Escape cancels (without closing the
+ * chat window), and focus goes back to the button that opened it.
+ */
+function ConfirmDialog({ title, children, confirmLabel, danger = false, busy = false, onConfirm, onCancel }) {
+  const boxRef = useRef(null);
+  const cancelRef = useRef(null);
+  useEffect(() => {
+    const opener = document.activeElement;
+    cancelRef.current?.focus();
+    return () => { if (opener && document.contains(opener)) opener.focus(); };
+  }, []);
+  const onKeyDown = (e) => {
+    if (e.key === 'Escape') { e.stopPropagation(); onCancel(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...boxRef.current.querySelectorAll('button:not(:disabled)')];
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  };
+  return (
+    <div className="lc-confirm" onKeyDown={onKeyDown} onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}>
+      <div ref={boxRef} className="lc-confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="lc-confirm-title" aria-describedby="lc-confirm-text">
+        <h2 id="lc-confirm-title">{title}</h2>
+        <p id="lc-confirm-text">{children}</p>
+        <div className="lc-confirm-actions">
+          <button ref={cancelRef} type="button" className="btn btn-ghost btn-sm" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button type="button" className={`btn btn-sm ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm} disabled={busy}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -419,18 +461,16 @@ function ChatEnded({ chat, transcripts, after, toast, onUpdated, onForget, onSta
         )}
       {emailError && <p className="lc-ended-error" role="alert">{emailError}</p>}
       <button type="button" className="btn btn-primary btn-sm" onClick={onStartOver}>Start a new chat</button>
-      {confirming ? (
-        <div className="lc-privacy" role="alert">
-          <span>Delete this conversation for good? Our concierge won’t be able to see it either.</span>
-          <button type="button" className="link lc-danger" disabled={!!busy} onClick={remove}>{busy === 'delete' ? 'Deleting…' : 'Yes, delete'}</button>
-          <button type="button" className="link" onClick={() => setConfirming(false)}>Cancel</button>
-        </div>
-      ) : (
-        <div className="lc-privacy">
-          <span>Removed from this device 30 minutes after it ends.</span>
-          <button type="button" className="link" onClick={onStartOver}>Remove now</button>
-          <button type="button" className="link lc-danger" onClick={() => setConfirming(true)}>Delete for good</button>
-        </div>
+      <div className="lc-privacy">
+        <span>Removed from this device 30 minutes after it ends.</span>
+        <button type="button" className="link" onClick={onStartOver}>Remove now</button>
+        <button type="button" className="link lc-danger" onClick={() => setConfirming(true)}>Delete for good</button>
+      </div>
+      {confirming && (
+        <ConfirmDialog title="Delete this conversation?" confirmLabel={busy === 'delete' ? 'Deleting…' : 'Delete for good'} danger busy={busy === 'delete'}
+          onConfirm={remove} onCancel={() => setConfirming(false)}>
+          All messages in this chat are erased for good. Our concierge won’t be able to see it either. This can’t be undone.
+        </ConfirmDialog>
       )}
     </div>
   );

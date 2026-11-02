@@ -60,7 +60,7 @@ export default function Inquiries() {
       ]} />}
       <div className="card">
         <div className="filters">
-          <SearchBox value={q.search} onChange={(search) => setQ({ search })} placeholder="Name, email, reference, message…" />
+          <SearchBox value={q.search} onChange={(search) => setQ({ search })} placeholder="Name, email, phone, reference…" />
           <select value={q.status} onChange={(e) => setQ({ status: e.target.value })} aria-label="Status"><option value="">All</option><option value="Open">Open</option>{meta.inquiryStatuses.map((x) => <option key={x}>{x}</option>)}</select>
           <select value={q.subject} onChange={(e) => setQ({ subject: e.target.value })} aria-label="Subject"><option value="">All subjects</option>{meta.inquirySubjects.map((x) => <option key={x}>{x}</option>)}</select>
         </div>

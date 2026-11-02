@@ -15,6 +15,7 @@ import { siteTheme } from '../lib/themes.js';
 import { newReference } from '../lib/refs.js';
 import { bookingCancelledNote, bookingNote, bookingRescheduledNote, inquiryNote, notifyStaff } from '../lib/notifications.js';
 import { bookingRules, loadSettings } from '../services/settings.js';
+import { encryptText } from '../lib/encryption.js';
 import { dayAvailability, hoursUntil, openDays } from '../services/availability.js';
 import { CONTACT_METHODS, addEvent, createBooking, loadBooking, loadEvents, moveBooking, publicBooking, quote } from '../services/bookings.js';
 import { cardsByIds, profileDetail, searchProfiles, similarProfiles, SORTS } from '../services/profiles.js';
@@ -427,7 +428,7 @@ router.post('/inquiries', wrap(async (req, res) => {
   const created = await tx(async (db) => {
     const reference = await newReference(db, 'MSG', 'inquiries', 'reference');
     const row = await db.one('INSERT INTO inquiries (reference, full_name, email, phone, subject, message) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id',
-      [reference, data.name, data.email, data.phone, data.subject, data.message]);
+      [reference, data.name, data.email, data.phone, data.subject, encryptText(data.message)]);
     return { id: row.id, reference };
   });
   const shape = { ...data, reference: created.reference };

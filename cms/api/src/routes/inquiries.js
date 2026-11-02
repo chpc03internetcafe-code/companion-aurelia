@@ -1,8 +1,10 @@
-// CMS: messages from the website Contact page.
+// CMS: messages from the website Contact page. The message and the staff notes are stored encrypted
+// (lib/encryption.js), so search covers the reference, name, email and phone but not the message text.
 import { Router } from 'express';
 import { one, params, q, run } from '../db/index.js';
 import { HttpError, idParam, paging, wrap } from '../lib/http.js';
 import { validate } from '../lib/validate.js';
+import { encryptText } from '../lib/encryption.js';
 
 const router = Router();
 export const INQUIRY_STATUSES = ['New', 'In Progress', 'Resolved', 'Closed'];
@@ -20,7 +22,7 @@ router.get('/', wrap(async (req, res) => {
   if (INQUIRY_SUBJECTS.includes(req.query.subject)) where.push(`i.subject = ${p.add(req.query.subject)}`);
   if (req.query.search) {
     const s = p.add(`%${req.query.search}%`);
-    where.push(`(i.reference ILIKE ${s} OR i.full_name ILIKE ${s} OR i.email ILIKE ${s} OR i.phone ILIKE ${s} OR i.message ILIKE ${s})`);
+    where.push(`(i.reference ILIKE ${s} OR i.full_name ILIKE ${s} OR i.email ILIKE ${s} OR i.phone ILIKE ${s})`);
   }
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const { total } = await one(`SELECT COUNT(*)::int AS total FROM inquiries i ${w}`, p.values);
@@ -49,7 +51,7 @@ router.patch('/:id', wrap(async (req, res) => {
   const sets = [];
   const vals = [];
   for (const [k, col] of [['status', 'status'], ['staffNotes', 'staff_notes']]) {
-    if (k in data) { vals.push(data[k]); sets.push(`${col} = $${vals.length}`); }
+    if (k in data) { vals.push(k === 'staffNotes' ? encryptText(data[k]) : data[k]); sets.push(`${col} = $${vals.length}`); }
   }
   if (sets.length) {
     vals.push(id);

@@ -521,6 +521,12 @@ main#main { min-height: 100vh; }
 .lc-privacy span { flex-basis: 100%; }
 .lc-privacy .link { font-size: 0.8rem; }
 .lc-privacy .lc-danger { color: var(--danger); }
+/* Confirmation over the chat window (End chat, Delete for good) */
+.lc-confirm { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, 0.45); animation: fade 0.15s ease-out; }
+.lc-confirm-box { width: 100%; max-width: 320px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); }
+.lc-confirm-box h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.lc-confirm-box p { margin: 0 0 18px; color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+.lc-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .lc-note { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; padding: 8px 12px 10px; color: var(--muted); font-size: 0.74rem; }
 .lc-mute.is-muted { color: var(--muted); opacity: 0.55; }
 .lc-context { display: flex; align-items: center; gap: 6px; align-self: center; margin: 0 0 4px; padding: 4px 6px 4px 12px; border-radius: 999px; background: var(--primary-soft); color: var(--muted); font-size: 0.8rem; }

@@ -123,6 +123,8 @@ export function bookingToDesk(site, b, to) {
 }
 
 // ---------- Contact messages ----------
+// The message itself is stored encrypted and never put in an email: the sender gets a receipt, the desk a
+// heads-up to read it in the CMS (Contact messages). Reply-To on the desk email still lets staff answer directly.
 export function inquiryReceipt(site, i) {
   return {
     to: i.email,
@@ -130,9 +132,10 @@ export function inquiryReceipt(site, i) {
     html: layout(site, {
       heading: 'Thanks for reaching out',
       intro: `Hi ${esc(firstName(i.name))}, we received your message and will get back to you as soon as possible.`,
-      body: rows([['Reference', i.reference], ['Subject', i.subject]]) + quote(i.message),
+      body: rows([['Reference', i.reference], ['Subject', i.subject]]),
+      footnote: 'For your privacy your message isn’t repeated in this email. Quote the reference if you contact us about it.',
     }),
-    text: text([`We received your message (${i.reference}).`, '', i.message]),
+    text: text([`Hi ${firstName(i.name)},`, `We received your message (${i.reference}, ${i.subject}) and will get back to you as soon as possible.`]),
   };
 }
 
@@ -140,13 +143,14 @@ export function inquiryToDesk(site, i, to) {
   return {
     to,
     replyTo: i.email,
-    subject: `[Website message] ${i.subject} — ${i.name}`,
+    subject: `[Website message] ${i.reference}`,
     html: layout(site, {
       heading: `New message ${i.reference}`,
-      intro: 'A new message arrived from the website contact form. Reply to this email to answer directly.',
-      body: rows([['Name', i.name], ['Email', i.email], ['Phone', i.phone], ['Subject', i.subject]]) + quote(i.message),
+      intro: 'A new message arrived from the website contact form. Open the CMS (Contact messages) to read it.',
+      body: rows([['Reference', i.reference], ['Subject', i.subject], ['From', i.name]]),
+      footnote: 'The message is stored encrypted and isn’t included in this email.',
     }),
-    text: text([`From: ${i.name} <${i.email}> ${i.phone || ''}`, `Subject: ${i.subject}`, '', i.message]),
+    text: text([`New message ${i.reference} (${i.subject}) from ${i.name}.`, 'Open the CMS (Contact messages) to read it.']),
   };
 }
 

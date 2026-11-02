@@ -332,7 +332,7 @@ await check('encryption: chats, timeline notes and client notes are stored encry
   const { driver } = await import('./index.js');
   const raw = async (sql, p) => (await (await driver()).query(sql, p)).rows; // without the automatic decryption
   // everything already in the database (demo data + this run) is ciphertext
-  for (const [table, col] of [['booking_messages', 'body'], ['booking_events', 'note'], ['bookings', 'client_notes']]) {
+  for (const [table, col] of [['booking_messages', 'body'], ['booking_events', 'note'], ['bookings', 'client_notes'], ['inquiries', 'message']]) {
     const [{ plain, total }] = await raw(`SELECT COUNT(*) FILTER (WHERE ${col} NOT LIKE 'enc:v1:%')::int AS plain, COUNT(*)::int AS total FROM ${table} WHERE ${col} IS NOT NULL AND ${col} <> ''`);
     assert.ok(total > 0, `${table}.${col} has rows`);
     assert.equal(plain, 0, `${table}.${col}: ${plain} of ${total} rows in plain text`);
@@ -348,6 +348,19 @@ await check('encryption: chats, timeline notes and client notes are stored encry
   assert.ok(!stored.body.includes('1407'));
   const [{ hits }] = await raw("SELECT COUNT(*)::int AS hits FROM audit_log WHERE summary LIKE '%1407%' OR changes LIKE '%1407%'");
   assert.equal(hits, 0, 'message text must not be copied to the audit trail');
+  // a Contact page message and its staff notes: ciphertext in the database, text in the CMS, hidden in the audit trail
+  const contact = await client()('POST', '/site/inquiries', { name: 'Private Sender', email: 'private@example.com', subject: 'Feedback', message: 'My suite number is 3304, please call' });
+  assert.equal(contact.status, 201, JSON.stringify(contact.data));
+  const [inq] = await raw('SELECT id, message FROM inquiries WHERE reference = $1', [contact.data.reference]);
+  assert.match(inq.message, /^enc:v1:/);
+  const noted = await staff('PATCH', `/inquiries/${inq.id}`, { staffNotes: 'Called back, prefers 3304 side door', status: 'In Progress' });
+  assert.equal(noted.data.message, 'My suite number is 3304, please call');
+  assert.equal(noted.data.staffNotes, 'Called back, prefers 3304 side door');
+  const [{ staff_notes: storedNotes }] = await raw('SELECT staff_notes FROM inquiries WHERE id = $1', [inq.id]);
+  assert.match(storedNotes, /^enc:v1:/);
+  assert.equal((await staff('GET', '/inquiries?search=Private%20Sender')).data.total, 1);
+  const [{ leaks }] = await raw("SELECT COUNT(*)::int AS leaks FROM audit_log WHERE summary LIKE '%3304%' OR changes LIKE '%3304%'");
+  assert.equal(leaks, 0, 'Contact message text must not be copied to the audit trail');
   // a tampered value is refused (authenticated encryption) instead of showing altered text
   const { decryptText, encryptText, resetKeys, UNREADABLE } = await import('../lib/encryption.js');
   const flipped = stored.body.slice(0, -2) + (stored.body.at(-2) === 'A' ? 'B' : 'A') + stored.body.at(-1);
