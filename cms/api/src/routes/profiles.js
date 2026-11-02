@@ -4,6 +4,7 @@ import { one, params, q, run, tx } from '../db/index.js';
 import { HttpError, idParam, paging, wrap } from '../lib/http.js';
 import { slugify, validate } from '../lib/validate.js';
 import { logEvent } from '../lib/audit.js';
+import { encryptText } from '../lib/encryption.js';
 import { removeImages, saveImage, imageUpload } from '../lib/storage.js';
 import { parseBlocks, parseTimeOff, saveSchedule, saveTimeOff } from '../services/schedule.js';
 
@@ -40,6 +41,9 @@ const schema = {
   staffNotes: { type: 'string', max: 6000 },
 };
 const COLS = Object.keys(schema).map((k) => k.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`));
+// staff-only notes are stored encrypted; everything else is public on the website (or needed for search and filters)
+const ENCRYPTED = new Set(['staffNotes', 'verificationNotes']);
+const columnValues = (data) => Object.keys(schema).map((k) => (ENCRYPTED.has(k) ? encryptText(data[k]) : data[k]));
 
 const LIST = `
   SELECT p.id, p.slug, p.display_name, p.age, p.status, p.is_featured, p.is_verified, p.age_verified_at, p.booking_enabled, p.away_until,
@@ -132,7 +136,7 @@ router.post('/', wrap(async (req, res) => {
   checkPublish(data, ageVerified);
   data.slug ||= slugify(data.displayName);
   const id = await tx(async (db) => {
-    const vals = Object.keys(schema).map((k) => data[k]);
+    const vals = columnValues(data);
     const row = await db.one(
       `INSERT INTO profiles (${COLS.join(', ')}, is_verified, verified_at, age_verified_at, published_at, last_active_at)
        VALUES (${COLS.map((_, i) => `$${i + 1}`).join(', ')}, $${COLS.length + 1}, CASE WHEN $${COLS.length + 1} THEN now() END,
@@ -160,7 +164,7 @@ router.put('/:id', wrap(async (req, res) => {
          age_verified_at = CASE WHEN $${COLS.length + 2} THEN COALESCE(age_verified_at, now()) END,
          published_at = CASE WHEN $${COLS.length + 3} = 'Published' THEN COALESCE(published_at, now()) ELSE published_at END,
          updated_at = now() WHERE id = $${COLS.length + 4}`,
-      [...Object.keys(schema).map((k) => data[k]), req.body.isVerified === undefined ? before.isVerified : !!req.body.isVerified, ageVerified, data.status, id]
+      [...columnValues(data), req.body.isVerified === undefined ? before.isVerified : !!req.body.isVerified, ageVerified, data.status, id]
     );
     await saveAreas(db, id, req.body.areaIds);
     // keep old links working when the URL changes

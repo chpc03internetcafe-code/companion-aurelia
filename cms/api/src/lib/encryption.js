@@ -1,8 +1,9 @@
 // Encryption at rest for private conversations: the booking chat between client, companion and concierge
 // (booking_messages.body), messages and notes on a booking's timeline (booking_events.note) and the client's
 // note on a booking request (bookings.client_notes), the website live chat (live_chat_messages.body), the
-// visitor's comment when rating a chat (live_chats.rating_comment), and Contact page messages with their staff
-// notes (inquiries.message, inquiries.staff_notes).
+// visitor's comment when rating a chat (live_chats.rating_comment), Contact page messages with their staff
+// notes (inquiries.message, inquiries.staff_notes), and the staff-only notes on profiles (profiles.staff_notes,
+// profiles.verification_notes). Public profile details (name, bio, rates…) stay readable for the website and search.
 //
 // - AES-256-GCM (authenticated: a changed byte makes decryption fail instead of returning altered text),
 //   with a fresh random 12-byte IV for every message.
@@ -110,4 +111,4 @@ export function decryptText(stored) {
 
 /** The encrypted columns, as [table, column]; used by the re-encryption script. */
 export const ENCRYPTED_COLUMNS = [['booking_messages', 'body'], ['booking_events', 'note'], ['bookings', 'client_notes'], ['live_chat_messages', 'body'], ['live_chats', 'rating_comment'],
-  ['inquiries', 'message'], ['inquiries', 'staff_notes']];
+  ['inquiries', 'message'], ['inquiries', 'staff_notes'], ['profiles', 'staff_notes'], ['profiles', 'verification_notes']];

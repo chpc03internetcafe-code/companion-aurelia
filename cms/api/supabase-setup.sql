@@ -108,6 +108,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   CHECK (status <> 'Published' OR age_verified_at IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS ix_profiles_status ON profiles(status, category_id);
+-- Staff notes and verification notes are stored encrypted (lib/encryption.js), which is longer than the text itself.
+ALTER TABLE profiles ALTER COLUMN verification_notes TYPE TEXT;
 CREATE INDEX IF NOT EXISTS ix_profiles_location ON profiles(base_location_id);
 
 -- Service areas a profile covers (cities or areas), besides the base location.

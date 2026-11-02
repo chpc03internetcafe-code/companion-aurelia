@@ -361,6 +361,19 @@ await check('encryption: chats, timeline notes and client notes are stored encry
   assert.equal((await staff('GET', '/inquiries?search=Private%20Sender')).data.total, 1);
   const [{ leaks }] = await raw("SELECT COUNT(*)::int AS leaks FROM audit_log WHERE summary LIKE '%3304%' OR changes LIKE '%3304%'");
   assert.equal(leaks, 0, 'Contact message text must not be copied to the audit trail');
+  // a profile's staff-only notes: ciphertext in the database, text in the CMS; public details stay plain for the website
+  const [{ id: profileId }] = await raw("SELECT id FROM profiles WHERE status = 'Published' ORDER BY id LIMIT 1");
+  const profile = (await staff('GET', `/profiles/${profileId}`)).data;
+  const saved = await staff('PUT', `/profiles/${profileId}`, { ...profile, staffNotes: 'Prefers calls after 6, apt 5508', verificationNotes: 'Passport checked by Mia, apt 5508' });
+  assert.equal(saved.status, 200, JSON.stringify(saved.data));
+  assert.equal(saved.data.staffNotes, 'Prefers calls after 6, apt 5508');
+  assert.equal(saved.data.verificationNotes, 'Passport checked by Mia, apt 5508');
+  const [storedProfile] = await raw('SELECT staff_notes, verification_notes, display_name FROM profiles WHERE id = $1', [profileId]);
+  assert.match(storedProfile.staff_notes, /^enc:v1:/);
+  assert.match(storedProfile.verification_notes, /^enc:v1:/);
+  assert.equal(storedProfile.display_name, profile.displayName);
+  const [{ leaks: profileLeaks }] = await raw("SELECT COUNT(*)::int AS leaks FROM audit_log WHERE summary LIKE '%5508%' OR changes LIKE '%5508%'");
+  assert.equal(profileLeaks, 0, 'profile notes must not be copied to the audit trail');
   // a tampered value is refused (authenticated encryption) instead of showing altered text
   const { decryptText, encryptText, resetKeys, UNREADABLE } = await import('../lib/encryption.js');
   const flipped = stored.body.slice(0, -2) + (stored.body.at(-2) === 'A' ? 'B' : 'A') + stored.body.at(-1);
