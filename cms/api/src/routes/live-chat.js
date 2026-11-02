@@ -7,7 +7,7 @@ import { SAMPLE_TEMPLATES } from '../lib/chat-templates.js';
 import { logEvent } from '../lib/audit.js';
 import { one, q, run } from '../db/index.js';
 import { longPoll } from '../lib/longpoll.js';
-import { addMessage, chatAlerts, chatStats, closeChat, latestMessageId, listChats, loadChat, reopenChat, setStaffTyping, staffThread, TOPIC, typingChats } from '../services/live-chat.js';
+import { addMessage, chatAlerts, chatStats, closeChat, latestMessageId, listChats, loadChat, purgeOldChats, reopenChat, setStaffTyping, staffThread, TOPIC, typingChats } from '../services/live-chat.js';
 
 const router = Router();
 
@@ -15,6 +15,7 @@ const log = (req, c, action, summary) => logEvent({ action, module: 'inquiries',
 
 // ?status=Open|Closed|all &search &mine=1
 router.get('/', wrap(async (req, res) => {
+  await purgeOldChats();
   const items = await listChats(req.admin, { status: req.query.status || 'Open', search: String(req.query.search || '').slice(0, 100), mine: req.query.mine === '1' });
   res.json({ items, stats: await chatStats(), latestId: await latestMessageId() });
 }));

@@ -28,7 +28,7 @@ const visitor = (name, email) => ({ actorType: 'Visitor', userName: name, userEm
 // ---------- Everything the website needs on load ----------
 const PUBLIC_SETTINGS = ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl',
   'telegramUrl', 'whatsappUrl', 'announcement1', 'announcement2', 'announcement3', 'heroTitle', 'heroText', 'currency', 'ageGateEnabled', 'ageGateText',
-  'bookingPolicy', 'liveChatEnabled', 'liveChatGreeting', 'seoTitleSuffix', 'seoDefaultDescription', 'seoOgImage', 'structuredData', 'searchIndexing'];
+  'bookingPolicy', 'liveChatEnabled', 'liveChatGreeting', 'liveChatTranscripts', 'seoTitleSuffix', 'seoDefaultDescription', 'seoOgImage', 'structuredData', 'searchIndexing'];
 
 // Same for every visitor, so it's cached on the server and briefly at the CDN.
 router.get('/bootstrap', wrap(async (_req, res) => {

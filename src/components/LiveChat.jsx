@@ -7,8 +7,8 @@
 // (can be muted) and a preview bubble above the chat button.
 // The concierge can send profile cards (View profile / Book). Outside desk hours the chat says when the desk is
 // back and asks for an email. While the visitor writes, the desk sees "typing…".
-// Ending the chat keeps it in this browser so the visitor can rate it and email themselves the transcript;
-// "Start a new chat" forgets it.
+// Ending the chat keeps it in this browser for 30 minutes so the visitor can rate it and email themselves the
+// transcript; "Start a new chat" or "Remove from this device" forgets it sooner, and "Delete" erases it for good.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api, store } from '../utils/api';
@@ -201,7 +201,7 @@ export default function LiveChat() {
   return (
     <>
       {open && (
-        <ChatWindow thread={thread} greeting={site.liveChatGreeting} pathname={pathname} toast={toast}
+        <ChatWindow thread={thread} greeting={site.liveChatGreeting} transcripts={site.liveChatTranscripts === '1'} pathname={pathname} toast={toast}
           context={context} onContext={setContext} muted={muted} onMute={() => setMuted(!muted)}
           onClose={() => setOpen(false)}
           onStarted={(r) => { merge(r, true); setActive(true); setContext(null); }}
@@ -227,7 +227,7 @@ export default function LiveChat() {
   );
 }
 
-function ChatWindow({ thread, greeting, pathname, toast, context, onContext, muted, onMute, onClose, onStarted, onSent, onForget }) {
+function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, onContext, muted, onMute, onClose, onStarted, onSent, onForget }) {
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const [text, setText] = useState('');
@@ -332,7 +332,8 @@ function ChatWindow({ thread, greeting, pathname, toast, context, onContext, mut
                 <button className="btn btn-primary lc-send" disabled={busy || !text.trim()} aria-label="Send"><IconSend size={18} /></button>
               </form>
             ) : (
-              <ChatEnded chat={chat} after={lastMessageId} toast={toast} onUpdated={onSent} onForget={onForget} onStartOver={startOver} />
+              <ChatEnded chat={chat} transcripts={transcripts} after={lastMessageId} toast={toast} onUpdated={onSent} onForget={onForget} onStartOver={startOver}
+                onDeleted={() => { onForget(); toast('Your chat was deleted.'); }} />
             )}
           </>
         )}
@@ -341,8 +342,9 @@ function ChatWindow({ thread, greeting, pathname, toast, context, onContext, mut
   );
 }
 
-/** After the chat has ended: rate it, email the transcript (once), or start a new chat. */
-function ChatEnded({ chat, after, toast, onUpdated, onForget, onStartOver }) {
+/** After the chat has ended: rate it, email the transcript (once, when the desk allows it), or start a new chat. */
+function ChatEnded({ chat, transcripts, after, toast, onUpdated, onForget, onStartOver, onDeleted }) {
+  const [confirming, setConfirming] = useState(false); // "Delete for good?"
   const [comment, setComment] = useState('');
   const [commented, setCommented] = useState(false);
   const [email, setEmail] = useState('');
@@ -366,6 +368,17 @@ function ChatEnded({ chat, after, toast, onUpdated, onForget, onStartOver }) {
   const sendComment = async (e) => {
     e.preventDefault();
     if (comment.trim() && await call('comment', '/site/chat/rate', { rating: chat.rating, comment })) setCommented(true);
+  };
+  const remove = async () => {
+    if (busy) return;
+    setBusy('delete');
+    try {
+      await api('POST', '/site/chat/delete');
+      onDeleted();
+    } catch (err) {
+      if (err.status === 404) onForget();
+      else toast(err.message, 'error');
+    } finally { setBusy(''); }
   };
   const transcript = async (e) => {
     e?.preventDefault();
@@ -392,7 +405,7 @@ function ChatEnded({ chat, after, toast, onUpdated, onForget, onStartOver }) {
           <button className="btn btn-ghost btn-sm" disabled={!comment.trim() || !!busy}>Send</button>
         </form>
       )}
-      {chat.transcriptSent ? <p className="lc-ended-note">The transcript was emailed to you.</p>
+      {!transcripts ? null : chat.transcriptSent ? <p className="lc-ended-note">The transcript was emailed to you.</p>
         : chat.email ? (
           <button type="button" className="link lc-transcript" disabled={!!busy} onClick={() => transcript()}>
             {busy === 'transcript' ? 'Sending…' : `Email me this conversation (${chat.email})`}
@@ -406,6 +419,19 @@ function ChatEnded({ chat, after, toast, onUpdated, onForget, onStartOver }) {
         )}
       {emailError && <p className="lc-ended-error" role="alert">{emailError}</p>}
       <button type="button" className="btn btn-primary btn-sm" onClick={onStartOver}>Start a new chat</button>
+      {confirming ? (
+        <div className="lc-privacy" role="alert">
+          <span>Delete this conversation for good? Our concierge won’t be able to see it either.</span>
+          <button type="button" className="link lc-danger" disabled={!!busy} onClick={remove}>{busy === 'delete' ? 'Deleting…' : 'Yes, delete'}</button>
+          <button type="button" className="link" onClick={() => setConfirming(false)}>Cancel</button>
+        </div>
+      ) : (
+        <div className="lc-privacy">
+          <span>Removed from this device 30 minutes after it ends.</span>
+          <button type="button" className="link" onClick={onStartOver}>Remove now</button>
+          <button type="button" className="link lc-danger" onClick={() => setConfirming(true)}>Delete for good</button>
+        </div>
+      )}
     </div>
   );
 }

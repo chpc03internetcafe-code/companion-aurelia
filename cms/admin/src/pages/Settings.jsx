@@ -7,7 +7,7 @@ import { ErrorBox, Field, Loading, Modal, PageHead, Pill, Tabs, Toggle, useActio
 
 const GROUPS = {
   general: ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl', 'telegramUrl', 'whatsappUrl', 'currency'],
-  homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText', 'liveChatEnabled', 'liveChatGreeting', 'liveChatHoursEnabled', 'liveChatHours', 'liveChatOfflineMessage'],
+  homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText', 'liveChatEnabled', 'liveChatGreeting', 'liveChatHoursEnabled', 'liveChatHours', 'liveChatOfflineMessage', 'liveChatTranscripts', 'liveChatRetentionDays'],
   booking: ['autoConfirm', 'bookingLeadHours', 'bookingWindowDays', 'cancelCutoffHours', 'rescheduleLimit', 'slotMinutes', 'bufferMinutes', 'bookingPolicy'],
   security: ['staffIdleMinutes', 'staffTwoStepRequired'],
 };
@@ -234,6 +234,17 @@ export default function Settings() {
                 <h2 style={{ marginTop: 12 }}>Live chat</h2>
                 <Toggle {...flag(form, setForm, 'liveChatEnabled')} label="Show the live chat button on the website" hint="Chats are answered under Live chat and stored encrypted" />
                 <Field label="Greeting" error={errors.liveChatGreeting} hint="First thing visitors see when they open the chat"><textarea rows={3} value={form.liveChatGreeting} onChange={set('liveChatGreeting')} /></Field>
+                <Toggle {...flag(form, setForm, 'liveChatTranscripts')} label="Let visitors email themselves the transcript"
+                  hint="After a chat ends, visitors can ask for the conversation by email (once per chat, without internal notes). Off: chat text never leaves the CMS by email" />
+                <Field label="Keep chats" error={errors.liveChatRetentionDays} hint="Chats (with their notes and ratings) are deleted for good once they’ve had no activity for this long">
+                  <select value={form.liveChatRetentionDays} onChange={set('liveChatRetentionDays')}>
+                    <option value="0">Until they’re deleted</option>
+                    <option value="30">30 days</option>
+                    <option value="90">90 days</option>
+                    <option value="180">180 days</option>
+                    <option value="365">1 year</option>
+                  </select>
+                </Field>
                 <Toggle {...flag(form, setForm, 'liveChatHoursEnabled')} label="Keep desk hours" hint="Philippine time. Outside these hours the chat says when you’re back and visitors must leave an email" />
                 {form.liveChatHoursEnabled === '1' && (
                   <>

@@ -44,6 +44,8 @@ export const defaultSettings = {
   liveChatHoursEnabled: '0',  // 1 = the desk keeps the hours below (Manila time); outside them visitors leave an email
   // { "0": ["10:00", "22:00"], … } by weekday, 0 = Sunday; a missing day is closed; a close time before the open time runs past midnight
   liveChatHours: JSON.stringify(Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map((d) => [d, ['10:00', '22:00']]))),
+  liveChatRetentionDays: '0', // delete chats with no activity for this many days (0 = keep them)
+  liveChatTranscripts: '0',  // 1 = after a chat ends, visitors can email themselves the conversation (the only email with chat text)
   liveChatOfflineMessage: 'We’re away right now. Leave your message and email, and we’ll reply as soon as we’re back.',
   bookingPolicy: 'Requests are confirmed by our concierge, usually within an hour during desk hours. You can cancel or reschedule online up to the cut-off shown on your booking. Fees are shown before you confirm and are settled directly as agreed with the concierge.',
   // CMS sign-out after this many minutes without activity (0 = never)

@@ -55,6 +55,8 @@ const settingsSchema = {
   liveChatHoursEnabled: flag,
   liveChatHours: deskHours,
   liveChatOfflineMessage: { type: 'string', max: 400 },
+  liveChatTranscripts: flag,
+  liveChatRetentionDays: { type: 'enum', values: ['0', '30', '90', '180', '365'], label: 'Keep chats' },
   autoConfirm: flag,
   bookingLeadHours: numberText(0, 168, 'Lead time'),
   bookingWindowDays: numberText(1, 365, 'Booking window'),

@@ -7,7 +7,7 @@ import { rateLimit } from '../lib/auth.js';
 import { logEvent } from '../lib/audit.js';
 import { longPoll } from '../lib/longpoll.js';
 import { loadSettings } from '../services/settings.js';
-import { addMessage, closeChat, deskHours, deskInfo, forgetChat, MAX_LENGTH, rateChat, sendTranscript, setVisitorTyping, startChat, TOPIC, visitorChat, visitorMessages } from '../services/live-chat.js';
+import { addMessage, closeChat, deleteChat, deskHours, purgeOldChats, deskInfo, forgetChat, MAX_LENGTH, rateChat, sendTranscript, setVisitorTyping, startChat, TOPIC, visitorChat, visitorMessages } from '../services/live-chat.js';
 
 const router = Router();
 
@@ -60,6 +60,7 @@ router.post('/', wrap(async (req, res) => {
     throw new HttpError(422, 'We’re away right now. Add your email so we can reply when we’re back.', { email: 'Needed while we’re away, so we can reply.' });
   }
   await rateLimit(`livechat:${clientIp(req)}`, 5, 3600000);
+  purgeOldChats().catch(() => {});
   const old = await visitorChat(req);
   if (old?.status === 'Open') await closeChat(old, 'Visitor');
   const c = await startChat(req, res, { ...data, page: data.page?.startsWith('/') ? data.page : null });
@@ -111,6 +112,16 @@ router.post('/transcript', wrap(async (req, res) => {
   await rateLimit(`livechat-transcript:${clientIp(req)}`, 3, 3600000);
   await sendTranscript(c, email);
   res.json(await visitorMessages(await visitorChat(req), req.body.after));
+}));
+
+// Deletes the chat and its messages for good, and forgets it in this browser.
+router.post('/delete', wrap(async (req, res) => {
+  const c = await myChat(req);
+  await deleteChat(c);
+  forgetChat(req, res);
+  await logEvent({ action: 'Live chat deleted', module: 'inquiries', entityType: 'Live chat', entityId: c.id, entityLabel: c.reference,
+    summary: 'The visitor deleted their live chat', actorType: 'Visitor' }, req);
+  res.json({ ok: true });
 }));
 
 // Ends the chat (if still open) and forgets it in this browser.

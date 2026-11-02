@@ -449,8 +449,11 @@ await check('live chat: visitor ↔ desk, long poll, encrypted at rest, private 
   assert.equal(staffView.ratingComment, 'Slow to answer about 2210');
   const [{ rating_comment: storedComment }] = await raw('SELECT rating_comment FROM live_chats WHERE id = $1', [item.id]);
   assert.match(storedComment, /^enc:v1:/);
-  // the transcript: sent once (503 when mail isn't configured, and then it can be tried again)
+  // the transcript: off unless the desk allows it; then sent once (503 when mail isn't configured, and then it can be tried again)
+  assert.equal((await visitor('POST', '/site/chat/transcript', {})).status, 403);
+  assert.equal((await staff('PUT', '/settings', { liveChatTranscripts: '1' })).status, 200);
   const sent = await visitor('POST', '/site/chat/transcript', {});
+  await staff('PUT', '/settings', { liveChatTranscripts: '0' });
   assert.ok([200, 503].includes(sent.status), JSON.stringify(sent.data));
   if (sent.status === 200) assert.equal((await visitor('POST', '/site/chat/transcript', {})).status, 409);
   else assert.equal((await visitor('GET', '/site/chat')).data.chat.transcriptSent, false);
@@ -466,6 +469,38 @@ await check('live chat: visitor ↔ desk, long poll, encrypted at rest, private 
   // every live chat message in the database is ciphertext
   const [{ plain }] = await raw("SELECT COUNT(*)::int AS plain FROM live_chat_messages WHERE body NOT LIKE 'enc:v1:%'");
   assert.equal(plain, 0);
+});
+
+await check('live chat privacy: ended chats leave the device, visitors can delete, old chats are deleted', async () => {
+  const { driver } = await import('./index.js');
+  const { purgeOldChats } = await import('../services/live-chat.js');
+  const raw = async (sql, p) => (await (await driver()).query(sql, p)).rows;
+  // an ended chat stays in the browser for 30 minutes, then the browser no longer gets it; reopening brings it back
+  const visitor = client();
+  const a = await visitor('POST', '/site/chat', { name: 'Privacy Tester', message: 'Hello' });
+  const [chatA] = await raw('SELECT id FROM live_chats WHERE reference = $1', [a.data.chat.reference]);
+  await visitor('POST', '/site/chat/close', {});
+  assert.equal((await visitor('GET', '/site/chat')).data.chat.status, 'Closed');
+  await raw("UPDATE live_chats SET closed_at = now() - INTERVAL '31 minutes' WHERE id = $1", [chatA.id]);
+  assert.equal((await visitor('GET', '/site/chat')).data.chat, null);
+  await staff('POST', `/live-chat/${chatA.id}/reopen`);
+  assert.equal((await visitor('GET', '/site/chat')).data.chat.status, 'Open');
+  // the visitor deletes it for good: gone for staff too, and out of this browser
+  assert.equal((await visitor('POST', '/site/chat/delete')).status, 200);
+  assert.equal((await raw('SELECT COUNT(*)::int AS n FROM live_chat_messages WHERE chat_id = $1', [chatA.id]))[0].n, 0);
+  assert.equal((await staff('GET', `/live-chat/${chatA.id}`)).status, 404);
+  assert.equal((await visitor('GET', '/site/chat')).data.chat, null);
+  assert.equal((await client()('POST', '/site/chat/delete')).status, 404);
+  // retention: kept by default; with 30 days, chats quiet for longer are deleted (recent ones stay)
+  const b = await client()('POST', '/site/chat', { name: 'Old Chat', message: 'From long ago' });
+  const c = await client()('POST', '/site/chat', { name: 'Recent Chat', message: 'From today' });
+  await raw("UPDATE live_chats SET last_message_at = now() - INTERVAL '40 days', status = 'Closed', closed_at = now() - INTERVAL '40 days' WHERE reference = $1", [b.data.chat.reference]);
+  assert.equal(await purgeOldChats({ force: true }), 0);
+  assert.equal((await staff('PUT', '/settings', { liveChatRetentionDays: '30' })).status, 200);
+  assert.ok(await purgeOldChats({ force: true }) >= 1);
+  const left = (await raw('SELECT reference FROM live_chats WHERE reference IN ($1, $2)', [b.data.chat.reference, c.data.chat.reference])).map((r) => r.reference);
+  assert.deepEqual(left, [c.data.chat.reference]);
+  await staff('PUT', '/settings', { liveChatRetentionDays: '0' });
 });
 
 await check('staff two-step sign-in (authenticator app + backup codes)', async () => {

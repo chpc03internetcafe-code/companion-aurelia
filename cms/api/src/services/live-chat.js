@@ -14,8 +14,12 @@
 //   when the visitor is typing (visitor_typing_until, refreshed the same way).
 // - Staff can add internal notes (live_chat_messages.internal): stored and shown like messages in the CMS, never
 //   sent to the visitor, never counted as a reply.
-// - When the chat has ended the visitor can rate it (Good / Bad, with an optional comment) and, once, email
-//   themselves the transcript. That transcript is the only email that carries message text, and the visitor asks for it.
+// - When the chat has ended the visitor can rate it (Good / Bad, with an optional comment) and, if the desk allows it
+//   (setting liveChatTranscripts, off by default), email themselves the transcript once. That transcript is the only
+//   email that carries message text, and only the visitor can ask for it.
+// - Privacy: an ended chat stays readable in the visitor's browser for DEVICE_MINUTES (for the rating and transcript),
+//   then the browser no longer gets it (unless staff reopen it). The visitor can remove it from the device or delete
+//   it for good at any time. With liveChatRetentionDays set, chats with no activity for that long are deleted.
 import crypto from 'node:crypto';
 import { one, params, q, run, tx } from '../db/index.js';
 import { HttpError } from '../lib/http.js';
@@ -27,6 +31,7 @@ import { notifyStaff } from '../lib/notifications.js';
 import { notify } from '../lib/mailer.js';
 import { liveChatReply, liveChatTranscript } from '../lib/emails.js';
 import { cached } from '../lib/cache.js';
+import { logEvent } from '../lib/audit.js';
 import { phDate, phMinutesNow, time12, toMin, weekday } from '../lib/dates.js';
 import { loadSettings } from './settings.js';
 import { cardsByIds } from './profiles.js';
@@ -36,6 +41,8 @@ const COOKIE_DAYS = 30;
 export const MAX_LENGTH = 2000;
 export const TOPIC = 'live-chat';
 const AWAY_MS = 2 * 60_000; // the visitor counts as gone (and is emailed about replies) after this long without checking in
+const DEVICE_MINUTES = 30; // an ended chat stays in the visitor's browser this long
+const PURGE_EVERY_MS = 10 * 60_000; // how often (per server instance) old chats are looked for
 const TYPING_SECONDS = 6; // both composers refresh this every few seconds while typing
 
 const SELECT = `SELECT c.*, u.full_name AS assigned_name, pr.display_name AS profile_name, pr.slug AS profile_slug
@@ -49,11 +56,11 @@ export function cleanText(text) {
 }
 
 // ---------- Visitor side ----------
-/** The chat this browser belongs to (by its cookie), or null. */
+/** The chat this browser belongs to (by its cookie), or null; an ended chat only for DEVICE_MINUTES after it ended. */
 export async function visitorChat(req) {
   const token = readCookie(req, COOKIE);
   if (!token || token.length < 32) return null;
-  return one(`${SELECT} WHERE c.token_hash = $1`, [sha256(token)]);
+  return one(`${SELECT} WHERE c.token_hash = $1 AND (c.status = 'Open' OR c.closed_at > now() - make_interval(mins => $2))`, [sha256(token), DEVICE_MINUTES]);
 }
 
 export const forgetChat = (req, res) => writeCookie(req, res, COOKIE, '', 0);
@@ -222,6 +229,7 @@ export async function rateChat(c, rating, comment) {
 
 /** Emails the conversation (without staff notes) to the visitor, once per chat, after it has ended. */
 export async function sendTranscript(c, email) {
+  if ((await loadSettings()).liveChatTranscripts !== '1') throw new HttpError(403, 'Emailing chat transcripts is turned off.');
   if (c.status !== 'Closed') throw new HttpError(409, 'You can email the transcript once the chat has ended.');
   const to = email || c.visitorEmail;
   if (!to) throw new HttpError(422, 'Add the email to send it to.', { email: 'Add the email to send it to.' });
@@ -235,6 +243,32 @@ export async function sendTranscript(c, email) {
     await run('UPDATE live_chats SET transcript_sent_at = NULL WHERE id = $1', [c.id]);
     throw new HttpError(503, 'We couldn’t send the email right now. Please try again later.');
   }
+}
+
+/** Deletes a chat and all its messages for good (the visitor asked for it). */
+export async function deleteChat(c) {
+  await run('DELETE FROM live_chats WHERE id = $1', [c.id]);
+  poke(TOPIC);
+}
+
+let lastPurge = 0;
+/**
+ * Deletes chats with no activity for liveChatRetentionDays (0 = keep them). Runs at most every PURGE_EVERY_MS per
+ * server instance (force: now), from busy chat requests, so it needs no scheduled job. Returns how many were deleted.
+ */
+export async function purgeOldChats({ force = false } = {}) {
+  if (!force && Date.now() - lastPurge < PURGE_EVERY_MS) return 0;
+  lastPurge = Date.now();
+  const days = Number((await loadSettings()).liveChatRetentionDays) || 0;
+  if (days <= 0) return 0;
+  const gone = await q(`DELETE FROM live_chats WHERE GREATEST(last_message_at, COALESCE(closed_at, last_message_at)) < now() - make_interval(days => $1)
+    RETURNING id`, [days]);
+  if (gone.length) {
+    poke(TOPIC);
+    await logEvent({ action: 'Old live chats deleted', module: 'inquiries', entityType: 'Live chat',
+      summary: `Deleted ${gone.length} live chat${gone.length === 1 ? '' : 's'} with no activity for ${days} days` });
+  }
+  return gone.length;
 }
 
 /** Ends a chat. by: 'Visitor' | 'Staff'. */

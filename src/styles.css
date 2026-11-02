@@ -517,6 +517,10 @@ main#main { min-height: 100vh; }
 .lc-transcript { align-self: flex-start; font-size: 0.85rem; text-align: left; }
 .lc-ended .lc-ended-note { font-size: 0.82rem; }
 .lc-ended .lc-ended-error { color: var(--danger); font-size: 0.8rem; }
+.lc-privacy { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 0.78rem; }
+.lc-privacy span { flex-basis: 100%; }
+.lc-privacy .link { font-size: 0.8rem; }
+.lc-privacy .lc-danger { color: var(--danger); }
 .lc-note { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0; padding: 8px 12px 10px; color: var(--muted); font-size: 0.74rem; }
 .lc-mute.is-muted { color: var(--muted); opacity: 0.55; }
 .lc-context { display: flex; align-items: center; gap: 6px; align-self: center; margin: 0 0 4px; padding: 4px 6px 4px 12px; border-radius: 999px; background: var(--primary-soft); color: var(--muted); font-size: 0.8rem; }
