@@ -9,6 +9,7 @@
 // back and asks for an email. While the visitor writes, the desk sees "typing…".
 // Ending the chat keeps it in this browser for 30 minutes so the visitor can rate it and email themselves the
 // transcript; "Start a new chat" or "Remove from this device" forgets it sooner, and "Delete" erases it for good.
+// Single messages: "Delete for me" hides any message here; "Delete for everyone" erases one of your own for the desk too.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api, store } from '../utils/api';
@@ -16,7 +17,7 @@ import { useSite } from '../context/SiteContext';
 import { OPEN_CHAT_EVENT, takeChatContext } from '../utils/chat';
 import { dateTime, duration, money } from '../utils/format';
 import { Field, Photo } from './Common';
-import { IconBell, IconChat, IconClose, IconLock, IconSend } from './Icons';
+import { IconBell, IconChat, IconClose, IconLock, IconSend, IconTrash } from './Icons';
 
 const ACTIVE_KEY = 'aurelia-chat';
 const READ_KEY = 'aurelia-chat-read';
@@ -106,7 +107,7 @@ export default function LiveChat() {
   const [peekId, setPeekId] = useState(0); // the reply shown in the bubble above the chat button
   const visible = useTabVisible();
   const lastId = useRef(0);
-  const known = useRef({ seen: 0, typing: false }); // what the window shows, so the long poll only answers on a change
+  const known = useRef({ seen: 0, typing: false, deletions: 0 }); // what the window shows, so the long poll only answers on a change
 
   // "Chat now" buttons elsewhere on the site (utils/chat.js)
   useEffect(() => {
@@ -123,10 +124,12 @@ export default function LiveChat() {
     setThread((cur) => {
       const base = reset || !cur ? [] : cur.messages;
       const ids = new Set(base.map((m) => m.id));
-      const messages = [...base, ...(r.messages || []).filter((m) => !ids.has(m.id))];
+      const deleted = new Set(r.deleted || []); // deleted for everyone, including messages already shown
+      const messages = [...base, ...(r.messages || []).filter((m) => !ids.has(m.id))]
+        .map((m) => (deleted.has(m.id) && !m.deleted ? { ...m, deleted: true, body: '', card: null } : m));
       lastId.current = messages.length ? messages[messages.length - 1].id : 0;
       const chat = r.chat === undefined ? cur?.chat ?? null : r.chat;
-      known.current = { seen: chat?.seenId || 0, typing: !!chat?.typing };
+      known.current = { seen: chat?.seenId || 0, typing: !!chat?.typing, deletions: chat?.deletions || 0 };
       return { chat, messages, online: r.online ?? cur?.online ?? false, desk: r.desk ?? cur?.desk ?? null };
     });
   }, []);
@@ -160,8 +163,8 @@ export default function LiveChat() {
       while (!stopped) {
         const hidden = document.visibilityState !== 'visible';
         try {
-          const { seen, typing } = known.current;
-          const r = await api('GET', `/site/chat/wait?after=${lastId.current}&seen=${seen}&typing=${typing ? 1 : 0}${hidden ? '&bg=1' : ''}`);
+          const { seen, typing, deletions } = known.current;
+          const r = await api('GET', `/site/chat/wait?after=${lastId.current}&seen=${seen}&typing=${typing ? 1 : 0}&del=${deletions}${hidden ? '&bg=1' : ''}`);
           if (!stopped) merge(r);
           if (r.chat?.status === 'Closed') break;
           if (hidden) await pause(HIDDEN_PAUSE_MS);
@@ -178,8 +181,8 @@ export default function LiveChat() {
   const latest = messages.length ? messages[messages.length - 1].id : 0;
   const looking = open && visible;
   useEffect(() => { if (looking && latest > readId) setReadId(latest); }, [looking, latest, readId]);
-  const unread = looking ? 0 : messages.filter((m) => m.from !== 'me' && m.id > readId).length;
-  const replies = looking ? [] : messages.filter((m) => m.from === 'staff' && m.id > readId);
+  const unread = looking ? 0 : messages.filter((m) => m.from !== 'me' && !m.deleted && m.id > readId).length;
+  const replies = looking ? [] : messages.filter((m) => m.from === 'staff' && !m.deleted && m.id > readId);
   const newestReply = replies.length ? replies[replies.length - 1] : null;
   useTitleCount(replies.length);
 
@@ -206,6 +209,14 @@ export default function LiveChat() {
           onClose={() => setOpen(false)}
           onStarted={(r) => { merge(r, true); setActive(true); setContext(null); }}
           onSent={(r) => merge(r)}
+          onMessageDeleted={(id, scope) => setThread((cur) => {
+            if (!cur) return cur;
+            const messages = scope === 'me' ? cur.messages.filter((m) => m.id !== id)
+              : cur.messages.map((m) => (m.id === id ? { ...m, deleted: true, body: '', card: null } : m));
+            lastId.current = messages.length ? messages[messages.length - 1].id : 0;
+            if (scope === 'everyone') known.current = { ...known.current, deletions: known.current.deletions + 1 };
+            return { ...cur, messages };
+          })}
           onForget={forget} />
       )}
       {peek && (
@@ -227,7 +238,7 @@ export default function LiveChat() {
   );
 }
 
-function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, onContext, muted, onMute, onClose, onStarted, onSent, onForget }) {
+function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, onContext, muted, onMute, onClose, onStarted, onSent, onMessageDeleted, onForget }) {
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const [text, setText] = useState('');
@@ -272,6 +283,20 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
     } finally { setBusy(false); }
   };
   const [confirmEnd, setConfirmEnd] = useState(false); // "End this chat?"
+  const [deleting, setDeleting] = useState(null); // the message in the "Delete message?" dialog
+  const [deletingBusy, setDeletingBusy] = useState(false);
+  const deleteMessage = async (scope) => {
+    if (!deleting || deletingBusy) return;
+    setDeletingBusy(true);
+    try {
+      await api('POST', `/site/chat/messages/${deleting.id}/delete`, { scope });
+      onMessageDeleted(deleting.id, scope);
+      setDeleting(null);
+    } catch (err) {
+      if (err.status === 404 && !thread.messages.some((m) => m.id === deleting.id)) setDeleting(null);
+      toast(err.message, 'error');
+    } finally { setDeletingBusy(false); }
+  };
   // ends the chat but keeps it here, for the rating and the transcript
   const end = async () => {
     setConfirmEnd(false);
@@ -313,10 +338,17 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
               {thread.messages.map((m) => (m.from === 'system' ? (
                 <p key={m.id} className="lc-system">{m.body}</p>
               ) : (
-                <div key={m.id} className={`chat-msg ${m.from === 'me' ? 'me' : ''}${m.card ? ' has-card' : ''}`}>
-                  {m.card && <ProfileCard p={m.card} />}
-                  {m.body && <div className="chat-bubble">{m.body}</div>}
-                  <small>{m.from === 'me' ? 'You' : m.name} · {dateTime(m.at)}{m === lastMine && seen ? ' · Seen' : ''}</small>
+                <div key={m.id} className={`chat-msg ${m.from === 'me' ? 'me' : ''}${m.card ? ' has-card' : ''}${m.deleted ? ' lc-deleted' : ''}`}>
+                  {m.deleted ? <div className="chat-bubble">{m.from === 'me' ? 'You deleted this message' : 'This message was deleted'}</div> : <>
+                    {m.card && <ProfileCard p={m.card} />}
+                    {m.body && <div className="chat-bubble">{m.body}</div>}
+                  </>}
+                  <small>
+                    {m.from === 'me' ? 'You' : m.name} · {dateTime(m.at)}{m === lastMine && seen && !m.deleted ? ' · Seen' : ''}
+                    <button type="button" className="lc-msg-delete" onClick={() => setDeleting(m)} aria-label={`Delete message from ${dateTime(m.at)}`} title="Delete">
+                      <IconTrash size={13} />
+                    </button>
+                  </small>
                 </div>
               )))}
               {typing && (
@@ -340,6 +372,17 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
           </>
         )}
       <p className="lc-note"><IconLock size={13} /> Messages are encrypted and only read by our concierge.</p>
+      {deleting && (
+        <ConfirmDialog title="Delete message?" busy={deletingBusy} onCancel={() => setDeleting(null)}
+          actions={[
+            { label: 'Delete for me', onClick: () => deleteMessage('me') },
+            deleting.from === 'me' && !deleting.deleted && { label: 'Delete for everyone', onClick: () => deleteMessage('everyone'), danger: true },
+          ]}>
+          {deleting.from === 'me' && !deleting.deleted
+            ? '“Delete for me” removes it from this chat on this device. “Delete for everyone” also erases it for our concierge.'
+            : 'It will be removed from this chat on this device. Our concierge still sees it.'}
+        </ConfirmDialog>
+      )}
       {confirmEnd && chat?.status === 'Open' && (
         <ConfirmDialog title="End this chat?" confirmLabel="End chat" onConfirm={end} onCancel={() => setConfirmEnd(false)}>
           You won’t be able to send more messages in this chat. You can still rate it, and start a new chat any time.
@@ -353,7 +396,9 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
  * A confirmation over the chat window: Cancel has focus first, Tab stays inside, Escape cancels (without closing the
  * chat window), and focus goes back to the button that opened it.
  */
-function ConfirmDialog({ title, children, confirmLabel, danger = false, busy = false, onConfirm, onCancel }) {
+function ConfirmDialog({ title, children, confirmLabel, danger = false, busy = false, onConfirm, onCancel, actions = null }) {
+  const choices = (actions || [{ label: confirmLabel, onClick: onConfirm, danger }]).filter(Boolean);
+  const stacked = choices.length > 1;
   const boxRef = useRef(null);
   const cancelRef = useRef(null);
   useEffect(() => {
@@ -361,6 +406,7 @@ function ConfirmDialog({ title, children, confirmLabel, danger = false, busy = f
     cancelRef.current?.focus();
     return () => { if (opener && document.contains(opener)) opener.focus(); };
   }, []);
+  const cancel = <button ref={cancelRef} type="button" className="btn btn-ghost btn-sm" onClick={onCancel} disabled={busy}>Cancel</button>;
   const onKeyDown = (e) => {
     if (e.key === 'Escape') { e.stopPropagation(); onCancel(); return; }
     if (e.key !== 'Tab') return;
@@ -375,9 +421,13 @@ function ConfirmDialog({ title, children, confirmLabel, danger = false, busy = f
       <div ref={boxRef} className="lc-confirm-box" role="alertdialog" aria-modal="true" aria-labelledby="lc-confirm-title" aria-describedby="lc-confirm-text">
         <h2 id="lc-confirm-title">{title}</h2>
         <p id="lc-confirm-text">{children}</p>
-        <div className="lc-confirm-actions">
-          <button ref={cancelRef} type="button" className="btn btn-ghost btn-sm" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className={`btn btn-sm ${danger ? 'btn-danger' : 'btn-primary'}`} onClick={onConfirm} disabled={busy}>{confirmLabel}</button>
+        {/* one choice: Cancel | Confirm in a row; several: stacked, Cancel last */}
+        <div className={`lc-confirm-actions${stacked ? ' is-stacked' : ''}`}>
+          {!stacked && cancel}
+          {choices.map((a) => (
+            <button key={a.label} type="button" className={`btn btn-sm ${a.danger ? 'btn-danger' : stacked ? 'btn-ghost' : 'btn-primary'}`} onClick={a.onClick} disabled={busy}>{a.label}</button>
+          ))}
+          {stacked && cancel}
         </div>
       </div>
     </div>

@@ -580,6 +580,11 @@ button.stat:hover, a.stat:hover { border-color: var(--primary); }
 @keyframes lc-dots { 0%, 60%, 100% { opacity: 0.35; transform: none; } 30% { opacity: 1; transform: translateY(-3px); } }
 @media (prefers-reduced-motion: reduce) { .lc-typing i { animation: none; } }
 .lc-row-typing { color: var(--green); font-style: italic; }
+.lc-deleted .chat-bubble { background: none; border: 1px dashed var(--line-strong); color: var(--muted); font-style: italic; }
+.lc-msg-delete { margin-left: 8px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 11px; text-decoration: underline; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+.chat-msg:hover .lc-msg-delete, .lc-msg-delete:focus-visible { opacity: 1; }
+.lc-msg-delete:hover { color: var(--danger); }
+@media (hover: none) { .lc-msg-delete { opacity: 1; } }
 .lc-rating-comment { display: block; margin-top: 4px; color: var(--text-2); font-style: italic; white-space: pre-wrap; }
 .lc-back { display: none; margin-bottom: 10px; font-size: 14px; }
 @media (max-width: 1100px) {

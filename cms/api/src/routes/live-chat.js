@@ -7,7 +7,7 @@ import { SAMPLE_TEMPLATES } from '../lib/chat-templates.js';
 import { logEvent } from '../lib/audit.js';
 import { one, q, run } from '../db/index.js';
 import { longPoll } from '../lib/longpoll.js';
-import { addMessage, chatAlerts, chatStats, closeChat, latestMessageId, listChats, loadChat, purgeOldChats, reopenChat, setStaffTyping, staffThread, TOPIC, typingChats } from '../services/live-chat.js';
+import { addMessage, chatAlerts, chatStats, closeChat, deleteMessage, deletionsTotal, latestMessageId, listChats, loadChat, purgeOldChats, reopenChat, setStaffTyping, staffThread, TOPIC, typingChats } from '../services/live-chat.js';
 
 const router = Router();
 
@@ -22,21 +22,25 @@ router.get('/', wrap(async (req, res) => {
 
 router.get('/stats', wrap(async (_req, res) => res.json(await chatStats())));
 
-// Long poll for the CMS: answers as soon as any chat has a message newer than ?after, or the chats whose visitor
-// is typing differ from ?typing (comma list of ids), or after ~20 s.
+// Long poll for the CMS: answers as soon as any chat has a message newer than ?after, the chats whose visitor
+// is typing differ from ?typing (comma list of ids), a message was deleted for everyone (?del: the known total),
+// or after ~20 s.
 router.get('/wait', wrap(async (req, res) => {
   const after = Number(req.query.after) || 0;
   const knownTyping = req.query.typing === undefined ? null : String(req.query.typing).replace(/^-$/, ''); // '-': nobody
+  const knownDeletions = req.query.del === undefined ? null : Number(req.query.del) || 0;
   let typing = '';
+  let deletions = 0;
   const latest = await longPoll(req, res, TOPIC, async () => {
     const id = await latestMessageId();
     typing = await typingChats();
-    return id > after || (knownTyping !== null && typing !== knownTyping) ? id : null;
+    deletions = await deletionsTotal();
+    return id > after || (knownTyping !== null && typing !== knownTyping) || (knownDeletions !== null && deletions !== knownDeletions) ? id || 1 : null;
   });
   if (res.writableEnded) return;
   // alerts: visitor messages since ?after, so the CMS can chime for replies in running chats
   const id = latest || after;
-  res.json({ latestId: id, typing: typing ? typing.split(',').map(Number) : [], stats: await chatStats(), alerts: after && id > after ? await chatAlerts(after) : [] });
+  res.json({ latestId: id, deletions, typing: typing ? typing.split(',').map(Number) : [], stats: await chatStats(), alerts: after && id > after ? await chatAlerts(after) : [] });
 }));
 
 // Published profiles, for sending a profile card (chat staff may not have the Profiles permission).
@@ -86,7 +90,7 @@ router.delete('/templates/:id', wrap(async (req, res) => {
 
 // One chat with its messages after ?after. Viewing marks the visitor's messages as read by the desk.
 router.get('/:id', wrap(async (req, res) => {
-  res.json(await staffThread(await loadChat(idParam(req)), req.query.after));
+  res.json(await staffThread(await loadChat(idParam(req)), req.query.after, req.admin.id));
 }));
 
 // { body, after, profileId?, internal? } — with profileId, a profile card (the text is then an optional note);
@@ -95,7 +99,7 @@ router.post('/:id/messages', wrap(async (req, res) => {
   const c = await loadChat(idParam(req));
   if (req.body.internal === true) {
     await addMessage(c, 'Staff', req.body.body, req.admin, { internal: true });
-    return res.status(201).json(await staffThread(await loadChat(c.id), req.body.after));
+    return res.status(201).json(await staffThread(await loadChat(c.id), req.body.after, req.admin.id));
   }
   if (c.status !== 'Open') throw new HttpError(409, 'This chat is closed. Reopen it to reply.');
   let profileId = null;
@@ -106,7 +110,17 @@ router.post('/:id/messages', wrap(async (req, res) => {
   }
   await addMessage(c, 'Staff', req.body.body, req.admin, { profileId });
   if (!c.assignedTo) await one('UPDATE live_chats SET assigned_to = $1 WHERE id = $2 AND assigned_to IS NULL RETURNING id', [req.admin.id, c.id]);
-  res.status(201).json(await staffThread(await loadChat(c.id), req.body.after));
+  res.status(201).json(await staffThread(await loadChat(c.id), req.body.after, req.admin.id));
+}));
+
+// { scope: 'me' | 'everyone' } — 'me': hidden for this staff member only; 'everyone': the desk's own replies and
+// notes, erased for both sides. Answers with the whole thread for this staff member.
+router.post('/:id/messages/:messageId/delete', wrap(async (req, res) => {
+  const c = await loadChat(idParam(req));
+  if (await deleteMessage(c, req.params.messageId, 'Staff', req.body.scope, req.admin)) {
+    await log(req, c, 'Live chat message deleted', `Deleted a message for everyone in the live chat with ${c.visitorName}`);
+  }
+  res.json(await staffThread(await loadChat(c.id), 0, req.admin.id));
 }));
 
 // { typing: true | false } — sent every few seconds while a reply is being written, so the visitor sees "typing…".
@@ -120,14 +134,14 @@ router.post('/:id/close', wrap(async (req, res) => {
   const c = await loadChat(idParam(req));
   await closeChat(c, 'Staff', req.admin);
   await log(req, c, 'Live chat closed', `Closed the live chat with ${c.visitorName}`);
-  res.json(await staffThread(await loadChat(c.id)));
+  res.json(await staffThread(await loadChat(c.id), 0, req.admin.id));
 }));
 
 router.post('/:id/reopen', wrap(async (req, res) => {
   const c = await loadChat(idParam(req));
   await reopenChat(c, req.admin);
   await log(req, c, 'Live chat reopened', `Reopened the live chat with ${c.visitorName}`);
-  res.json(await staffThread(await loadChat(c.id)));
+  res.json(await staffThread(await loadChat(c.id), 0, req.admin.id));
 }));
 
 // { userId: <admin id> | null } — null unassigns; default: the signed-in staff member.
@@ -138,7 +152,7 @@ router.post('/:id/assign', wrap(async (req, res) => {
   if (userId && !user) throw new HttpError(422, 'That staff member can’t be assigned.');
   await one('UPDATE live_chats SET assigned_to = $1, updated_at = now() WHERE id = $2 RETURNING id', [userId, c.id]);
   await log(req, c, 'Live chat assigned', user ? `Assigned the live chat with ${c.visitorName} to ${user.fullName}` : `Unassigned the live chat with ${c.visitorName}`);
-  res.json(await staffThread(await loadChat(c.id)));
+  res.json(await staffThread(await loadChat(c.id), 0, req.admin.id));
 }));
 
 export default router;

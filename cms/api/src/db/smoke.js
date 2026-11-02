@@ -480,7 +480,7 @@ await check('live chat: visitor ↔ desk, long poll, encrypted at rest, private 
   assert.equal(ended.status, 200);
   assert.equal((await visitor('GET', '/site/chat')).data.chat, null);
   // every live chat message in the database is ciphertext
-  const [{ plain }] = await raw("SELECT COUNT(*)::int AS plain FROM live_chat_messages WHERE body NOT LIKE 'enc:v1:%'");
+  const [{ plain }] = await raw("SELECT COUNT(*)::int AS plain FROM live_chat_messages WHERE body NOT LIKE 'enc:v1:%' AND deleted_at IS NULL");
   assert.equal(plain, 0);
 });
 
@@ -514,6 +514,59 @@ await check('live chat privacy: ended chats leave the device, visitors can delet
   const left = (await raw('SELECT reference FROM live_chats WHERE reference IN ($1, $2)', [b.data.chat.reference, c.data.chat.reference])).map((r) => r.reference);
   assert.deepEqual(left, [c.data.chat.reference]);
   await staff('PUT', '/settings', { liveChatRetentionDays: '0' });
+});
+
+await check('live chat: delete a message for me or for everyone, on both sides', async () => {
+  const { driver } = await import('./index.js');
+  const raw = async (sql, p) => (await (await driver()).query(sql, p)).rows;
+  const visitor = client();
+  const started = await visitor('POST', '/site/chat', { name: 'Delete Tester', message: 'My card ends 4242' });
+  const [chat] = await raw('SELECT id FROM live_chats WHERE reference = $1', [started.data.chat.reference]);
+  const first = started.data.messages[0].id;
+  const reply = await staff('POST', `/live-chat/${chat.id}/messages`, { body: 'Thanks, noted' });
+  const staffMsg = reply.data.messages.at(-1).id;
+  // the visitor can't delete the desk's message for everyone, nor a message from another chat
+  assert.equal((await visitor('POST', `/site/chat/messages/${staffMsg}/delete`, { scope: 'everyone' })).status, 403);
+  assert.equal((await client()('POST', `/site/chat/messages/${first}/delete`, { scope: 'me' })).status, 404);
+  // the visitor deletes their own message for everyone: text erased in the database, a placeholder on both sides
+  const waiting = staff('GET', `/live-chat/wait?after=${staffMsg}&typing=-&del=${(await staff('GET', `/live-chat/wait?after=0`)).data.deletions}`);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal((await visitor('POST', `/site/chat/messages/${first}/delete`, { scope: 'everyone' })).status, 200);
+  assert.equal((await waiting).status, 200, 'the CMS feed wakes up');
+  const [row] = await raw('SELECT body, deleted_by FROM live_chat_messages WHERE id = $1', [first]);
+  assert.equal(row.body, '');
+  assert.equal(row.deleted_by, 'Visitor');
+  const staffView = await staff('GET', `/live-chat/${chat.id}`);
+  const shown = staffView.data.messages.find((m) => m.id === first);
+  assert.ok(shown.deleted && shown.body === '' && staffView.data.deleted.includes(first), JSON.stringify(shown));
+  assert.equal((await visitor('GET', '/site/chat')).data.messages.find((m) => m.id === first).deleted, true);
+  // the visitor hides the desk's reply for themselves only
+  await visitor('POST', `/site/chat/messages/${staffMsg}/delete`, { scope: 'me' });
+  assert.ok(!(await visitor('GET', '/site/chat')).data.messages.some((m) => m.id === staffMsg));
+  assert.ok((await staff('GET', `/live-chat/${chat.id}`)).data.messages.some((m) => m.id === staffMsg && !m.deleted));
+  // staff: "for me" hides it for that staff member only; "for everyone" only for the desk's own messages
+  const second = (await visitor('POST', '/site/chat/messages', { body: 'Second message' })).data.messages.at(-1).id;
+  assert.equal((await staff('POST', `/live-chat/${chat.id}/messages/${second}/delete`, { scope: 'everyone' })).status, 403);
+  const hidden = await staff('POST', `/live-chat/${chat.id}/messages/${second}/delete`, { scope: 'me' });
+  assert.ok(!hidden.data.messages.some((m) => m.id === second));
+  const manager = client();
+  await manager('POST', '/admin/auth/login', { email: 'manager@aurelia.example', password: 'aurelia2026' });
+  const managerView = await manager('GET', `/live-chat/${chat.id}`);
+  if (managerView.status === 200) assert.ok(managerView.data.messages.some((m) => m.id === second), 'another staff member still sees it');
+  const unsent = await staff('POST', `/live-chat/${chat.id}/messages/${staffMsg}/delete`, { scope: 'everyone' });
+  assert.ok(unsent.data.messages.find((m) => m.id === staffMsg).deleted);
+  // the visitor's long poll hears about a deletion even when there's nothing new
+  const known = (await visitor('GET', '/site/chat')).data.chat.deletions;
+  const note = (await staff('POST', `/live-chat/${chat.id}/messages`, { body: 'note', internal: true })).data.messages.at(-1).id;
+  const visitorWait = visitor('GET', `/site/chat/wait?after=${second}&seen=0&typing=0&del=${known}`);
+  await new Promise((r) => setTimeout(r, 300));
+  await staff('POST', `/live-chat/${chat.id}/messages/${note}/delete`, { scope: 'everyone' });
+  const woke = await visitorWait;
+  assert.ok(!woke.data.messages.some((m) => m.id === note), 'notes never reach the visitor');
+  assert.equal((await visitor('POST', `/site/chat/messages/${note}/delete`, { scope: 'me' })).status, 404);
+  // no message text in the audit trail
+  const [{ leaks }] = await raw("SELECT COUNT(*)::int AS leaks FROM audit_log WHERE summary LIKE '%4242%' OR changes LIKE '%4242%'");
+  assert.equal(leaks, 0);
 });
 
 await check('staff two-step sign-in (authenticator app + backup codes)', async () => {

@@ -7,7 +7,7 @@ import { rateLimit } from '../lib/auth.js';
 import { logEvent } from '../lib/audit.js';
 import { longPoll } from '../lib/longpoll.js';
 import { loadSettings } from '../services/settings.js';
-import { addMessage, closeChat, deleteChat, deskHours, purgeOldChats, deskInfo, forgetChat, MAX_LENGTH, rateChat, sendTranscript, setVisitorTyping, startChat, TOPIC, visitorChat, visitorMessages } from '../services/live-chat.js';
+import { addMessage, closeChat, deleteChat, deleteMessage, deskHours, purgeOldChats, deskInfo, forgetChat, MAX_LENGTH, rateChat, sendTranscript, setVisitorTyping, startChat, TOPIC, visitorChat, visitorMessages } from '../services/live-chat.js';
 
 const router = Router();
 
@@ -29,7 +29,8 @@ router.get('/', wrap(async (req, res) => {
   res.json({ ...(await visitorMessages(c, req.query.after)), online: desk.online, desk });
 }));
 
-// Long poll: new messages after ?after, or a change of status, read receipt (?seen) or typing (?typing=0|1);
+// Long poll: new messages after ?after, or a change of status, read receipt (?seen), typing (?typing=0|1) or
+// messages deleted for everyone (?del: how many the browser knows of);
 // { messages: [] } after ~20 s with none. ?bg=1 while the tab is hidden: delivered, but not marked as read.
 router.get('/wait', wrap(async (req, res) => {
   await enabled();
@@ -38,6 +39,7 @@ router.get('/wait', wrap(async (req, res) => {
   const known = {
     seenId: req.query.seen === undefined ? undefined : Number(req.query.seen) || 0,
     typing: req.query.typing === undefined ? undefined : req.query.typing === '1',
+    deletions: req.query.del === undefined ? undefined : Number(req.query.del) || 0,
   };
   const opts = { onlyNew: true, known, background: req.query.bg === '1' };
   const r = await longPoll(req, res, TOPIC, () => visitorMessages(c, after, opts), { everyMs: 1_500 });
@@ -78,6 +80,16 @@ router.post('/messages', wrap(async (req, res) => {
   await rateLimit(`livechat-msg:${c.id}`, 40, 10 * 60000);
   await addMessage(c, 'Visitor', req.body.body);
   res.status(201).json(await visitorMessages(c, req.body.after));
+}));
+
+// { scope: 'me' | 'everyone' } — 'me' hides any message in this browser's chat; 'everyone' erases one of the
+// visitor's own messages for the desk too.
+router.post('/messages/:messageId/delete', wrap(async (req, res) => {
+  await enabled();
+  const c = await myChat(req);
+  await rateLimit(`livechat-delete:${c.id}`, 60, 10 * 60000);
+  await deleteMessage(c, req.params.messageId, 'Visitor', req.body.scope);
+  res.json({ ok: true });
 }));
 
 // { typing: true | false } — sent every few seconds while the visitor writes, so the desk sees "typing…".

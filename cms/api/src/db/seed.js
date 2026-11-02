@@ -316,7 +316,7 @@ export async function seedDemo({ log = console.log } = {}) {
 }
 
 // db:reset drops these, including the unused tables of the removed member, VIP and companion portals
-const TABLES = ['live_chat_templates', 'live_chat_messages', 'live_chats', 'rate_limits', 'notification_reads', 'notifications', 'audit_log', 'admin_mfa_challenges', 'admin_sessions', 'admin_users', 'admin_roles', 'inquiries', 'redirects', 'faqs', 'posts', 'content_pages',
+const TABLES = ['live_chat_templates', 'live_chat_hidden', 'live_chat_messages', 'live_chats', 'rate_limits', 'notification_reads', 'notifications', 'audit_log', 'admin_mfa_challenges', 'admin_sessions', 'admin_users', 'admin_roles', 'inquiries', 'redirects', 'faqs', 'posts', 'content_pages',
   'booking_messages', 'booking_events', 'bookings', 'collection_profiles', 'collections', 'member_favorites', 'memberships', 'member_tokens', 'member_mfa_challenges', 'member_sessions', 'members', 'fees',
   'profile_change_requests', 'companion_mfa_challenges', 'companion_tokens', 'companion_sessions', 'companion_accounts',
   'profile_time_off', 'profile_schedules', 'profile_rates', 'profile_media', 'profile_areas', 'profiles', 'tiers', 'locations', 'categories', 'site_settings'];

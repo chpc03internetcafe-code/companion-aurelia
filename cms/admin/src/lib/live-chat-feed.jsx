@@ -4,7 +4,8 @@
 // and a desktop notification when the tab is in the background. New chats (and chats that had gone quiet) already
 // get a staff notification from the server, so those are left to lib/notifications.jsx.
 // Alerts are for chats assigned to you or to nobody, and not for the chat you're looking at. No message text is shown.
-// It also says which chats' visitors are typing (CHAT_TYPING_EVENT with { ids }) whenever that changes.
+// It also says which chats' visitors are typing (CHAT_TYPING_EVENT with { ids }) whenever that changes, and fires
+// CHAT_FEED_EVENT when a message is deleted for everyone (so open threads show it).
 import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from './api';
@@ -33,6 +34,7 @@ export function useLiveChatFeed({ pathname, onStats }) {
     let stopped = false;
     let after = 0;
     let typing = '';
+    let deletions = null; // messages deleted for everyone, in all chats
     let wake = () => {};
     const pause = (ms) => new Promise((resolve) => { const t = setTimeout(resolve, ms); wake = () => { clearTimeout(t); resolve(); }; });
 
@@ -59,7 +61,7 @@ export function useLiveChatFeed({ pathname, onStats }) {
     (async () => {
       while (!stopped) {
         try {
-          const r = await api.get('/live-chat/wait', { after, typing: typing || '-' }); // '-': nobody (empty values aren't sent)
+          const r = await api.get('/live-chat/wait', { after, typing: typing || '-', del: deletions ?? '' }); // '-': nobody (empty values aren't sent)
           if (stopped) break;
           const nowTyping = (r.typing || []).join(',');
           if (nowTyping !== typing) {
@@ -68,9 +70,11 @@ export function useLiveChatFeed({ pathname, onStats }) {
             window.dispatchEvent(new CustomEvent(CHAT_TYPING_EVENT, { detail: { ids: typingNow } }));
           }
           live.current.onStats?.(r.stats);
-          if (after && r.latestId > after) {
+          const deleted = deletions !== null && r.deletions !== deletions;
+          deletions = r.deletions ?? deletions;
+          if ((after && r.latestId > after) || deleted) {
             window.dispatchEvent(new CustomEvent(CHAT_FEED_EVENT, { detail: { latestId: r.latestId, stats: r.stats } }));
-            alert(r.alerts || []);
+            if (after && r.latestId > after) alert(r.alerts || []);
           }
           after = r.latestId;
         } catch {

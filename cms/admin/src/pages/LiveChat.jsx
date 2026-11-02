@@ -4,6 +4,7 @@
 // Saved replies (components/ChatTemplates.jsx) can be inserted from the Templates button or by typing "/".
 // Internal notes (the Note tab of the composer) are for staff only and can be added to closed chats too.
 // Staff see when the visitor is typing, and the visitor's rating once the chat has ended.
+// Any message can be deleted "for me" (hidden for you only); the desk's replies and notes also "for everyone".
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -129,6 +130,32 @@ function SendProfileModal({ chat, note: initialNote, after, onClose, onSent }) {
   );
 }
 
+const deletedText = (m, visitorName) => (m.deletedBy === 'Visitor' ? `${visitorName} deleted this message` : m.internal ? 'This note was deleted' : 'This message was deleted');
+
+/** Delete one message: for me (hidden for this staff member) or, for the desk's own messages, for everyone. */
+function DeleteMessageModal({ chatId, message, visitorName, onClose, onDone }) {
+  const [run, busy] = useAction();
+  const forEveryone = message.sender === 'Staff' && !message.deleted;
+  const remove = async (scope) => {
+    const r = await run(() => api.post(`/live-chat/${chatId}/messages/${message.id}/delete`, { scope }), scope === 'me' ? 'Deleted for you' : 'Deleted for everyone');
+    if (r) onDone(r);
+  };
+  return (
+    <Modal title={message.internal ? 'Delete note?' : 'Delete message?'} onClose={onClose}
+      footer={<>
+        <button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancel</button>
+        <button className="btn btn-ghost" onClick={() => remove('me')} disabled={busy}>Delete for me</button>
+        {forEveryone && <button className="btn btn-danger" onClick={() => remove('everyone')} disabled={busy}>Delete for everyone</button>}
+      </>}>
+      <p style={{ margin: 0 }}>
+        {forEveryone
+          ? <>“Delete for me” hides it only for you. “Delete for everyone” erases it for the whole desk{message.internal ? '' : ` and for ${visitorName}`}; they’ll see that a message was deleted.</>
+          : <>“Delete for me” hides it only for you. {message.sender === 'Visitor' && !message.deleted ? `${visitorName} and the rest of the desk still see it.` : 'The rest of the desk still sees it.'}</>}
+      </p>
+    </Modal>
+  );
+}
+
 function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageTemplates, visitorTyping }) {
   const { user } = useAuth();
   const typing = useTypingSignal(id);
@@ -140,6 +167,7 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
   const [pick, setPick] = useState(0);
   const [sharing, setSharing] = useState(false); // the "Send a profile card" window
   const [noteMode, setNoteMode] = useState(false); // the composer writes an internal note instead of a reply
+  const [deleting, setDeleting] = useState(null); // the message in the "Delete message?" window
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const lastId = useRef(0);
@@ -149,7 +177,9 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
     setData((cur) => {
       const base = reset || !cur ? [] : cur.messages;
       const known = new Set(base.map((m) => m.id));
-      const messages = [...base, ...r.messages.filter((m) => !known.has(m.id))];
+      const deleted = new Set(r.deleted || []); // deleted for everyone, including messages already shown
+      const messages = [...base, ...r.messages.filter((m) => !known.has(m.id))]
+        .map((m) => (deleted.has(m.id) && !m.deleted ? { ...m, deleted: true, body: '', profile: null } : m));
       lastId.current = messages.length ? messages[messages.length - 1].id : 0;
       return { chat: r.chat, messages };
     });
@@ -240,10 +270,15 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
           {data.messages.map((m) => (m.sender === 'System' ? (
             <p key={m.id} className="lc-system">{m.body} · {dateTime(m.at)}</p>
           ) : (
-            <div key={m.id} className={`chat-msg ${m.sender === 'Staff' ? 'companion' : ''}${m.internal ? ' lc-note-msg' : ''}`}>
-              {m.profile && <SentCard p={m.profile} siteUrl={siteUrl} />}
-              {m.body && <div className="chat-bubble">{m.internal && <b className="lc-note-tag">Internal note</b>}{m.body}</div>}
-              <small>{m.sender === 'Staff' ? m.name : c.visitorName} · {dateTime(m.at)}{m.internal ? ' · only staff see this' : ''}</small>
+            <div key={m.id} className={`chat-msg ${m.sender === 'Staff' ? 'companion' : ''}${m.internal ? ' lc-note-msg' : ''}${m.deleted ? ' lc-deleted' : ''}`}>
+              {m.deleted ? <div className="chat-bubble">{deletedText(m, c.visitorName)}</div> : <>
+                {m.profile && <SentCard p={m.profile} siteUrl={siteUrl} />}
+                {m.body && <div className="chat-bubble">{m.internal && <b className="lc-note-tag">Internal note</b>}{m.body}</div>}
+              </>}
+              <small>
+                {m.sender === 'Staff' ? m.name : c.visitorName} · {dateTime(m.at)}{m.internal && !m.deleted ? ' · only staff see this' : ''}
+                {manage && <button type="button" className="lc-msg-delete" onClick={() => setDeleting(m)} aria-label={`Delete message from ${dateTime(m.at)}`}>Delete</button>}
+              </small>
             </div>
           )))}
           {visitorTyping && c.status === 'Open' && (
@@ -294,6 +329,10 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
             <button className="btn btn-primary" disabled={!text.trim() || busy}>{noting ? 'Add note' : 'Send'}</button>
           </div>
         </form>
+      )}
+      {deleting && (
+        <DeleteMessageModal chatId={id} message={deleting} visitorName={c.visitorName} onClose={() => setDeleting(null)}
+          onDone={(r) => { merge(r, true); setDeleting(null); onChanged(); }} />
       )}
       {sharing && (
         <SendProfileModal chat={c} note={text} after={lastId.current} onClose={() => setSharing(false)}

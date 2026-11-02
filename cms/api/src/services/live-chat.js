@@ -17,6 +17,8 @@
 // - When the chat has ended the visitor can rate it (Good / Bad, with an optional comment) and, if the desk allows it
 //   (setting liveChatTranscripts, off by default), email themselves the transcript once. That transcript is the only
 //   email that carries message text, and only the visitor can ask for it.
+// - Single messages can be deleted "for me" (hidden from the visitor, or from one staff member) or, for your own
+//   side's messages, "for everyone" (the text is erased; both sides see "This message was deleted").
 // - Privacy: an ended chat stays readable in the visitor's browser for DEVICE_MINUTES (for the rating and transcript),
 //   then the browser no longer gets it (unless staff reopen it). The visitor can remove it from the device or delete
 //   it for good at any time. With liveChatRetentionDays set, chats with no activity for that long are deleted.
@@ -134,7 +136,10 @@ export async function startChat(req, res, { name, email, message, page, profileI
 const visitorShape = (m, cards) => ({
   id: m.id, from: m.sender === 'Visitor' ? 'me' : m.sender === 'Staff' ? 'staff' : 'system', name: m.sender === 'Staff' ? 'Concierge' : null, body: m.body, at: m.createdAt,
   card: m.profileId ? cards.get(m.profileId) || null : null, // null when the profile is no longer published
+  deleted: !!m.deletedAt, // deleted for everyone: body is ''
 });
+/** Ids of the chat's messages deleted for everyone, so either side can update messages it already shows. */
+const deletedIds = async (chatId) => (await q('SELECT id FROM live_chat_messages WHERE chat_id = $1 AND deleted_at IS NOT NULL', [chatId])).map((r) => r.id);
 /** Public profile cards for the messages that carry one. */
 const cardsFor = async (rows) => new Map((await cardsByIds([...new Set(rows.map((r) => r.profileId).filter(Boolean))])).map((c) => [c.id, c]));
 export const publicChat = (c) => ({
@@ -144,6 +149,7 @@ export const publicChat = (c) => ({
   typing: !!c.typing, // someone at the desk is writing a reply
   rating: c.rating || null, // 'Good' | 'Bad' once the visitor rated the ended chat
   transcriptSent: !!c.transcriptSentAt,
+  deletions: c.deletions || 0, // messages deleted for everyone so far
 });
 
 /**
@@ -152,8 +158,9 @@ export const publicChat = (c) => ({
  * `background`: the visitor's tab is hidden, so the messages are delivered but not counted as read.
  */
 export async function visitorMessages(c, after = 0, { onlyNew = false, known = {}, background = false } = {}) {
-  const rows = await q('SELECT id, sender, body, profile_id, created_at FROM live_chat_messages WHERE chat_id = $1 AND id > $2 AND NOT internal ORDER BY id LIMIT 500', [c.id, Math.max(0, Number(after) || 0)]);
-  const now = await one(`SELECT status, staff_seen_message_id, COALESCE(staff_typing_until > now(), FALSE) AS typing, rating, transcript_sent_at
+  const rows = await q(`SELECT id, sender, body, profile_id, created_at, deleted_at FROM live_chat_messages
+    WHERE chat_id = $1 AND id > $2 AND NOT internal AND NOT visitor_hidden ORDER BY id LIMIT 500`, [c.id, Math.max(0, Number(after) || 0)]);
+  const now = await one(`SELECT status, staff_seen_message_id, COALESCE(staff_typing_until > now(), FALSE) AS typing, rating, transcript_sent_at, deletions
     FROM live_chats WHERE id = $1`, [c.id]);
   const cur = { ...c, ...(now || {}) };
   if (!background) {
@@ -162,9 +169,10 @@ export async function visitorMessages(c, after = 0, { onlyNew = false, known = {
   }
   if (onlyNew && !rows.length && cur.status === c.status && cur.rating === c.rating
     && (known.seenId === undefined || known.seenId === (cur.staffSeenMessageId || 0))
-    && (known.typing === undefined || known.typing === !!cur.typing)) return null;
+    && (known.typing === undefined || known.typing === !!cur.typing)
+    && (known.deletions === undefined || known.deletions === (cur.deletions || 0))) return null;
   const cards = await cardsFor(rows);
-  return { chat: publicChat(cur), messages: rows.map((m) => visitorShape(m, cards)) };
+  return { chat: publicChat(cur), messages: rows.map((m) => visitorShape(m, cards)), deleted: await deletedIds(c.id) };
 }
 
 // ---------- Both sides ----------
@@ -194,7 +202,7 @@ export async function addMessage(c, sender, text, admin = null, { profileId = nu
   }
   if (sender === 'Staff' && c.visitorEmail) {
     // the visitor left: email them once per batch of unread replies (without the text)
-    const v = await one(`SELECT visitor_seen_at, (SELECT COUNT(*)::int FROM live_chat_messages WHERE chat_id = $1 AND sender = 'Staff' AND NOT internal AND id > lc.visitor_seen_message_id) AS unread
+    const v = await one(`SELECT visitor_seen_at, (SELECT COUNT(*)::int FROM live_chat_messages WHERE chat_id = $1 AND sender = 'Staff' AND NOT internal AND deleted_at IS NULL AND id > lc.visitor_seen_message_id) AS unread
       FROM live_chats lc WHERE id = $1`, [c.id]);
     const away = !v.visitorSeenAt || Date.now() - new Date(v.visitorSeenAt).getTime() > AWAY_MS;
     if (away && v.unread === 1) await notify(liveChatReply(await loadSettings(), c));
@@ -238,12 +246,38 @@ export async function sendTranscript(c, email) {
     throw new HttpError(409, 'The transcript was already sent.');
   }
   const rows = await q(`SELECT m.sender, m.body, m.created_at, pr.display_name AS profile_name, pr.slug AS profile_slug
-    FROM live_chat_messages m LEFT JOIN profiles pr ON pr.id = m.profile_id WHERE m.chat_id = $1 AND NOT m.internal ORDER BY m.id LIMIT 1000`, [c.id]);
+    FROM live_chat_messages m LEFT JOIN profiles pr ON pr.id = m.profile_id
+    WHERE m.chat_id = $1 AND NOT m.internal AND NOT m.visitor_hidden AND m.deleted_at IS NULL ORDER BY m.id LIMIT 1000`, [c.id]);
   if (!await notify(liveChatTranscript(await loadSettings(), c, to, rows))) {
     await run('UPDATE live_chats SET transcript_sent_at = NULL WHERE id = $1', [c.id]);
     throw new HttpError(503, 'We couldn’t send the email right now. Please try again later.');
   }
 }
+
+/**
+ * Deletes one message. by: 'Visitor' | 'Staff' (with admin). scope 'me': hidden for the visitor, or for this staff
+ * member only. scope 'everyone': only for your own side's messages (staff: replies and notes); the text is erased
+ * and both sides see that a message was deleted.
+ */
+export async function deleteMessage(c, messageId, by, scope, admin = null) {
+  if (!['me', 'everyone'].includes(scope)) throw new HttpError(422, 'Choose who to delete it for.');
+  const m = await one('SELECT id, sender, internal, visitor_hidden, deleted_at FROM live_chat_messages WHERE id = $1 AND chat_id = $2', [Number(messageId) || 0, c.id]);
+  if (!m || m.sender === 'System' || (by === 'Visitor' && (m.internal || m.visitorHidden))) throw new HttpError(404, 'Message not found.');
+  if (scope === 'me') {
+    if (by === 'Visitor') await run('UPDATE live_chat_messages SET visitor_hidden = TRUE WHERE id = $1', [m.id]);
+    else await run('INSERT INTO live_chat_hidden (message_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [m.id, admin.id]);
+    return false;
+  }
+  if (m.sender !== by) throw new HttpError(403, 'You can only delete your own messages for everyone.');
+  if (m.deletedAt) return false;
+  await run("UPDATE live_chat_messages SET body = '', profile_id = NULL, deleted_at = now(), deleted_by = $2 WHERE id = $1", [m.id, by]);
+  await run('UPDATE live_chats SET deletions = deletions + 1, updated_at = now() WHERE id = $1', [c.id]);
+  poke(TOPIC);
+  return true;
+}
+
+/** Total messages deleted for everyone, in all chats: the CMS feed answers when it changes. */
+export const deletionsTotal = async () => (await one('SELECT COALESCE(SUM(deletions), 0)::int AS n FROM live_chats')).n;
 
 /** Deletes a chat and all its messages for good (the visitor asked for it). */
 export async function deleteChat(c) {
@@ -287,11 +321,11 @@ export async function reopenChat(c, admin) {
 
 // ---------- Staff side ----------
 const staffShape = (m) => ({
-  id: m.id, sender: m.sender, internal: !!m.internal, name: m.sender === 'Staff' ? m.author || 'Concierge' : m.sender === 'Visitor' ? null : 'System', body: m.body, at: m.createdAt,
+  id: m.id, sender: m.sender, internal: !!m.internal, deleted: !!m.deletedAt, deletedBy: m.deletedBy || null, name: m.sender === 'Staff' ? m.author || 'Concierge' : m.sender === 'Visitor' ? null : 'System', body: m.body, at: m.createdAt,
   profile: m.profileId ? { id: m.profileId, name: m.profileName || 'Removed profile', slug: m.profileSlug, photoUrl: m.profilePhoto } : null,
 });
 
-const unreadSql = `(SELECT COUNT(*)::int FROM live_chat_messages lm WHERE lm.chat_id = c.id AND lm.sender = 'Visitor' AND lm.id > c.staff_seen_message_id)`;
+const unreadSql = `(SELECT COUNT(*)::int FROM live_chat_messages lm WHERE lm.chat_id = c.id AND lm.sender = 'Visitor' AND lm.deleted_at IS NULL AND lm.id > c.staff_seen_message_id)`;
 
 /** ?status=Open|Closed|all &search &mine (assigned to this admin). */
 export async function listChats(admin, { status = 'Open', search, mine, limit = 100 } = {}) {
@@ -303,15 +337,15 @@ export async function listChats(admin, { status = 'Open', search, mine, limit = 
     const s = p.add(`%${search}%`);
     where.push(`(c.reference ILIKE ${s} OR c.visitor_name ILIKE ${s} OR c.visitor_email ILIKE ${s})`);
   }
-  const rows = await q(`SELECT c.*, u.full_name AS assigned_name, pr.display_name AS profile_name, ${unreadSql} AS unread, last.body AS last_body, last.sender AS last_sender, last.profile_id AS last_profile_id
+  const rows = await q(`SELECT c.*, u.full_name AS assigned_name, pr.display_name AS profile_name, ${unreadSql} AS unread, last.body AS last_body, last.sender AS last_sender, last.profile_id AS last_profile_id, last.deleted_at AS last_deleted_at
     FROM live_chats c LEFT JOIN admin_users u ON u.id = c.assigned_to LEFT JOIN profiles pr ON pr.id = c.profile_id
-    LEFT JOIN LATERAL (SELECT lm.body, lm.sender, lm.profile_id FROM live_chat_messages lm WHERE lm.chat_id = c.id AND NOT lm.internal ORDER BY lm.id DESC LIMIT 1) last ON TRUE
+    LEFT JOIN LATERAL (SELECT lm.body, lm.sender, lm.profile_id, lm.deleted_at FROM live_chat_messages lm WHERE lm.chat_id = c.id AND NOT lm.internal ORDER BY lm.id DESC LIMIT 1) last ON TRUE
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY (c.status = 'Open') DESC, c.last_message_at DESC LIMIT ${p.add(Math.min(limit, 200))}`, p.values);
   const cut = (t) => { const s = String(t || '').replace(/\s+/g, ' '); return s.length > 120 ? `${s.slice(0, 119).trimEnd()}…` : s; };
   return rows.map((r) => ({
     id: r.id, reference: r.reference, status: r.status, visitorName: r.visitorName, visitorEmail: r.visitorEmail,
     assignedTo: r.assignedTo, assignedName: r.assignedName, unread: r.unread, profileName: r.profileName || null,
-    lastMessageAt: r.lastMessageAt, createdAt: r.createdAt, rating: r.rating || null, preview: r.lastBody ? cut(r.lastBody) : r.lastProfileId ? 'Sent a profile card' : '', lastSender: r.lastSender,
+    lastMessageAt: r.lastMessageAt, createdAt: r.createdAt, rating: r.rating || null, preview: r.lastDeletedAt ? 'Message deleted' : r.lastBody ? cut(r.lastBody) : r.lastProfileId ? 'Sent a profile card' : '', lastSender: r.lastSender,
     visitorOnline: r.status === 'Open' && !!r.visitorSeenAt && Date.now() - new Date(r.visitorSeenAt).getTime() < 60_000,
   }));
 }
@@ -339,12 +373,16 @@ export async function loadChat(id) {
   return c;
 }
 
-/** The chat with messages after `after` for staff; marks visitor messages seen when markSeen. */
-export async function staffThread(c, after = 0, markSeen = true) {
-  const rows = await q(`SELECT m.id, m.sender, m.author, m.body, m.created_at, m.profile_id, m.internal, pr.display_name AS profile_name, pr.slug AS profile_slug,
+/**
+ * The chat with messages after `after` for staff member `viewerId` (without the ones they deleted for themselves);
+ * marks visitor messages seen when markSeen.
+ */
+export async function staffThread(c, after = 0, viewerId = null, markSeen = true) {
+  const rows = await q(`SELECT m.id, m.sender, m.author, m.body, m.created_at, m.profile_id, m.internal, m.deleted_at, m.deleted_by, pr.display_name AS profile_name, pr.slug AS profile_slug,
       (SELECT url FROM profile_media pm WHERE pm.profile_id = m.profile_id AND pm.kind = 'photo' ORDER BY pm.is_primary DESC, pm.sort_order, pm.id LIMIT 1) AS profile_photo
     FROM live_chat_messages m LEFT JOIN profiles pr ON pr.id = m.profile_id
-    WHERE m.chat_id = $1 AND m.id > $2 ORDER BY m.id LIMIT 1000`, [c.id, Math.max(0, Number(after) || 0)]);
+    WHERE m.chat_id = $1 AND m.id > $2 AND NOT EXISTS (SELECT 1 FROM live_chat_hidden h WHERE h.message_id = m.id AND h.user_id = $3)
+    ORDER BY m.id LIMIT 1000`, [c.id, Math.max(0, Number(after) || 0), viewerId || 0]);
   const shared = rows.filter((m) => !m.internal); // the visitor's "Seen" only follows messages they can see
   if (markSeen && shared.length) {
     await run('UPDATE live_chats SET staff_seen_message_id = GREATEST(staff_seen_message_id, $1) WHERE id = $2', [shared[shared.length - 1].id, c.id]);
@@ -361,5 +399,6 @@ export async function staffThread(c, after = 0, markSeen = true) {
       rating: c.rating || null, ratingComment: c.ratingComment || '', ratedAt: c.ratedAt, transcriptSentAt: c.transcriptSentAt,
     },
     messages: rows.map(staffShape),
+    deleted: await deletedIds(c.id),
   };
 }

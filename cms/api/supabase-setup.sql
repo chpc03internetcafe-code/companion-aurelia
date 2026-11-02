@@ -672,6 +672,18 @@ ALTER TABLE live_chats ADD COLUMN IF NOT EXISTS rating VARCHAR(4) NULL CHECK (ra
 ALTER TABLE live_chats ADD COLUMN IF NOT EXISTS rating_comment TEXT NULL;
 ALTER TABLE live_chats ADD COLUMN IF NOT EXISTS rated_at TIMESTAMPTZ NULL;
 ALTER TABLE live_chats ADD COLUMN IF NOT EXISTS transcript_sent_at TIMESTAMPTZ NULL;
+-- Deleting single messages. "For everyone" erases the text (body = '') and keeps a placeholder; deletions counts
+-- them so the other side's long poll notices. "For me": visitor_hidden for the visitor, live_chat_hidden per staff member.
+ALTER TABLE live_chat_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
+ALTER TABLE live_chat_messages ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(10) NULL;
+ALTER TABLE live_chat_messages ADD COLUMN IF NOT EXISTS visitor_hidden BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE live_chats ADD COLUMN IF NOT EXISTS deletions INT NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS live_chat_hidden (
+  message_id  INT NOT NULL REFERENCES live_chat_messages(id) ON DELETE CASCADE,
+  user_id     INT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+  PRIMARY KEY (message_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS ix_live_chat_hidden_user ON live_chat_hidden(user_id);
 
 -- Saved replies the desk can insert in a live chat. {name}, {profile} and {agent} are filled in by the CMS.
 CREATE TABLE IF NOT EXISTS live_chat_templates (
@@ -784,6 +796,11 @@ INSERT INTO site_settings (key, value) VALUES ('slotMinutes', '30') ON CONFLICT 
 INSERT INTO site_settings (key, value) VALUES ('bufferMinutes', '30') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('liveChatEnabled', '1') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('liveChatGreeting', 'Hi! Ask us anything about companions, bookings or VIP membership. Our concierge usually replies within a few minutes during desk hours.') ON CONFLICT (key) DO NOTHING;
+INSERT INTO site_settings (key, value) VALUES ('liveChatHoursEnabled', '0') ON CONFLICT (key) DO NOTHING;
+INSERT INTO site_settings (key, value) VALUES ('liveChatHours', '{"0":["10:00","22:00"],"1":["10:00","22:00"],"2":["10:00","22:00"],"3":["10:00","22:00"],"4":["10:00","22:00"],"5":["10:00","22:00"],"6":["10:00","22:00"]}') ON CONFLICT (key) DO NOTHING;
+INSERT INTO site_settings (key, value) VALUES ('liveChatRetentionDays', '0') ON CONFLICT (key) DO NOTHING;
+INSERT INTO site_settings (key, value) VALUES ('liveChatTranscripts', '0') ON CONFLICT (key) DO NOTHING;
+INSERT INTO site_settings (key, value) VALUES ('liveChatOfflineMessage', 'We’re away right now. Leave your message and email, and we’ll reply as soon as we’re back.') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('bookingPolicy', 'Requests are confirmed by our concierge, usually within an hour during desk hours. You can cancel or reschedule online up to the cut-off shown on your booking. Fees are shown before you confirm and are settled directly as agreed with the concierge.') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('staffIdleMinutes', '30') ON CONFLICT (key) DO NOTHING;
 INSERT INTO site_settings (key, value) VALUES ('staffTwoStepRequired', '0') ON CONFLICT (key) DO NOTHING;
