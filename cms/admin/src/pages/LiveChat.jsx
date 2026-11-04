@@ -5,6 +5,8 @@
 // Internal notes (the Note tab of the composer) are for staff only and can be added to closed chats too.
 // Staff see when the visitor is typing, and the visitor's rating once the chat has ended.
 // Any message can be deleted "for me" (hidden for you only); the desk's replies and notes also "for everyone".
+// AI (Gemini, when GEMINI_API_KEY is set): "Suggest" drafts a reply in the composer; when the AI assistant is on
+// (Settings), its replies show as "AI assistant" and it can be stopped per chat.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -57,7 +59,7 @@ function ChatRow({ c, active, typing }) {
         <strong>{c.visitorOnline && <i className="lc-online" title="On the website now" />}{c.visitorName}</strong>
         {c.unread > 0 ? <span className="pill pill-red">{c.unread} new</span> : <small className="muted">{timeAgo(c.lastMessageAt)}</small>}
       </span>
-      <span className="lc-row-preview">{typing ? <em className="lc-row-typing">typing…</em> : <>{c.lastSender === 'Staff' ? 'You: ' : ''}{c.preview}</>}</span>
+      <span className="lc-row-preview">{typing ? <em className="lc-row-typing">typing…</em> : <>{c.lastSender === 'Staff' ? 'You: ' : c.lastSender === 'Assistant' ? 'AI: ' : ''}{c.preview}</>}</span>
       <small className="muted">{c.reference}{c.profileName ? ` · about ${c.profileName}` : ''}{c.assignedName ? ` · ${c.assignedName}` : ''}{c.status === 'Closed' ? ' · closed' : ''}{c.rating ? ` · ${RATING[c.rating]}` : ''}</small>
     </Link>
   );
@@ -135,7 +137,7 @@ const deletedText = (m, visitorName) => (m.deletedBy === 'Visitor' ? `${visitorN
 /** Delete one message: for me (hidden for this staff member) or, for the desk's own messages, for everyone. */
 function DeleteMessageModal({ chatId, message, visitorName, onClose, onDone }) {
   const [run, busy] = useAction();
-  const forEveryone = message.sender === 'Staff' && !message.deleted;
+  const forEveryone = ['Staff', 'Assistant'].includes(message.sender) && !message.deleted;
   const remove = async (scope) => {
     const r = await run(() => api.post(`/live-chat/${chatId}/messages/${message.id}/delete`, { scope }), scope === 'me' ? 'Deleted for you' : 'Deleted for everyone');
     if (r) onDone(r);
@@ -168,6 +170,8 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
   const [sharing, setSharing] = useState(false); // the "Send a profile card" window
   const [noteMode, setNoteMode] = useState(false); // the composer writes an internal note instead of a reply
   const [deleting, setDeleting] = useState(null); // the message in the "Delete message?" window
+  const [suggesting, setSuggesting] = useState(false); // an AI reply draft is being written
+  const { toast } = useUi();
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const lastId = useRef(0);
@@ -244,9 +248,20 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
     }
     if (e.key === 'Enter' && !e.shiftKey) send(e);
   };
-  const act = async (action, message) => {
-    const r = await run(() => api.post(`/live-chat/${id}/${action}`, {}), message);
+  const act = async (action, message, body = {}) => {
+    const r = await run(() => api.post(`/live-chat/${id}/${action}`, body), message);
     if (r) { merge(r, true); onChanged(); }
+  };
+  // an AI draft of the next reply, put in the composer to edit (replaces what's there)
+  const suggest = async () => {
+    if (suggesting) return;
+    setSuggesting(true);
+    try {
+      const r = await api.post(`/live-chat/${id}/suggest`, {});
+      setText(r.text);
+      typing.typed(r.text);
+      requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.setSelectionRange(r.text.length, r.text.length); });
+    } catch (err) { toast(err.message, 'error'); } finally { setSuggesting(false); }
   };
 
   return (
@@ -270,13 +285,13 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
           {data.messages.map((m) => (m.sender === 'System' ? (
             <p key={m.id} className="lc-system">{m.body} · {dateTime(m.at)}</p>
           ) : (
-            <div key={m.id} className={`chat-msg ${m.sender === 'Staff' ? 'companion' : ''}${m.internal ? ' lc-note-msg' : ''}${m.deleted ? ' lc-deleted' : ''}`}>
+            <div key={m.id} className={`chat-msg ${m.sender === 'Staff' ? 'companion' : m.sender === 'Assistant' ? 'companion lc-ai-msg' : ''}${m.internal ? ' lc-note-msg' : ''}${m.deleted ? ' lc-deleted' : ''}`}>
               {m.deleted ? <div className="chat-bubble">{deletedText(m, c.visitorName)}</div> : <>
                 {m.profile && <SentCard p={m.profile} siteUrl={siteUrl} />}
                 {m.body && <div className="chat-bubble">{m.internal && <b className="lc-note-tag">Internal note</b>}{m.body}</div>}
               </>}
               <small>
-                {m.sender === 'Staff' ? m.name : c.visitorName} · {dateTime(m.at)}{m.internal && !m.deleted ? ' · only staff see this' : ''}
+                {m.sender === 'Visitor' ? c.visitorName : m.name} · {dateTime(m.at)}{m.internal && !m.deleted ? ' · only staff see this' : ''}
                 {manage && <button type="button" className="lc-msg-delete" onClick={() => setDeleting(m)} aria-label={`Delete message from ${dateTime(m.at)}`}>Delete</button>}
               </small>
             </div>
@@ -298,6 +313,11 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
             ['Handled by', c.assignedName || '—'],
             ['Rating', c.rating ? <>{RATING[c.rating]}{c.ratingComment && <q className="lc-rating-comment">{c.ratingComment}</q>}</> : c.status === 'Closed' ? 'Not rated' : '—'],
             ['Transcript', c.transcriptSentAt ? `Emailed to the visitor ${dateTime(c.transcriptSentAt)}` : '—'],
+            ...(c.ai.on ? [['AI assistant', <>
+              {c.aiOff ? 'Off in this chat' : 'Answers while the desk is away or busy'}{c.aiReplies ? ` · ${c.aiReplies} ${c.aiReplies === 1 ? 'reply' : 'replies'}` : ''}
+              {manage && c.status === 'Open' && <> · <button type="button" className="link" disabled={busy}
+                onClick={() => act('assistant', c.aiOff ? 'The AI assistant can answer this chat' : 'AI assistant stopped for this chat', { on: c.aiOff })}>{c.aiOff ? 'Turn on' : 'Stop'}</button></>}
+            </>]] : []),
           ]} />
         </aside>
       </div>
@@ -325,6 +345,8 @@ function Thread({ id, manage, onChanged, feedTick, siteUrl, templates, onManageT
               <button type="button" className={`btn btn-ghost tpl-toggle${picker && !picker.slash ? ' on' : ''}`} aria-expanded={!!picker && !picker.slash}
                 onClick={() => { setPicker((p) => (p && !p.slash ? null : { query: '', slash: false })); setPick(0); }}>Templates</button>
               <button type="button" className="btn btn-ghost" onClick={() => { setPicker(null); setSharing(true); }} title="Send a profile card with View profile and Book buttons">Profile</button>
+              {c.ai.ready && <button type="button" className="btn btn-ghost" disabled={suggesting} onClick={() => { setPicker(null); suggest(); }}
+                title="Draft a reply with AI; you can edit it before sending">{suggesting ? 'Writing…' : 'Suggest'}</button>}
             </>}
             <button className="btn btn-primary" disabled={!text.trim() || busy}>{noting ? 'Add note' : 'Send'}</button>
           </div>

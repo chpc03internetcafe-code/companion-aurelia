@@ -10,6 +10,7 @@
 // Ending the chat keeps it in this browser for 30 minutes so the visitor can rate it and email themselves the
 // transcript; "Start a new chat" or "Remove from this device" forgets it sooner, and "Delete" erases it for good.
 // Single messages: "Delete for me" hides any message here; "Delete for everyone" erases one of your own for the desk too.
+// When the desk has the AI assistant on, the chat says so, and the assistant's replies are labelled AI.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { api, store } from '../utils/api';
@@ -335,6 +336,9 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
           <>
             <div className="lc-body lc-list" ref={listRef} aria-live="polite">
               {chat.profile && <p className="lc-context">About <Link to={`/companions/${chat.profile.slug}`}>{chat.profile.name}</Link></p>}
+              {(thread.desk?.assistant || thread.messages.some((m) => m.ai)) && (
+                <p className="lc-system">While the concierge is away or busy, our AI assistant may answer. A person from the desk follows up when needed.</p>
+              )}
               {thread.messages.map((m) => (m.from === 'system' ? (
                 <p key={m.id} className="lc-system">{m.body}</p>
               ) : (
@@ -344,7 +348,7 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
                     {m.body && <div className="chat-bubble">{m.body}</div>}
                   </>}
                   <small>
-                    {m.from === 'me' ? 'You' : m.name} · {dateTime(m.at)}{m === lastMine && seen && !m.deleted ? ' · Seen' : ''}
+                    {m.from === 'me' ? 'You' : m.name}{m.ai && <b className="lc-ai-tag">AI</b>} · {dateTime(m.at)}{m === lastMine && seen && !m.deleted ? ' · Seen' : ''}
                     <button type="button" className="lc-msg-delete" onClick={() => setDeleting(m)} aria-label={`Delete message from ${dateTime(m.at)}`} title="Delete">
                       <IconTrash size={13} />
                     </button>
@@ -354,7 +358,7 @@ function ChatWindow({ thread, greeting, transcripts, pathname, toast, context, o
               {typing && (
                 <div className="chat-msg lc-typing">
                   <div className="chat-bubble" aria-hidden="true"><i /><i /><i /></div>
-                  <small>Concierge is typing…</small>
+                  <small>{thread.desk?.assistant ? 'Typing…' : 'Concierge is typing…'}</small>
                 </div>
               )}
             </div>

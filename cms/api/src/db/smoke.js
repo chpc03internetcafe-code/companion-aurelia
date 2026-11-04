@@ -582,6 +582,98 @@ await check('live chat: delete a message for me or for everyone, on both sides',
   assert.equal(leaks, 0);
 });
 
+await check('live chat AI assistant: answers while the desk is away, hands over, never sees notes; reply suggestions', async () => {
+  const { driver } = await import('./index.js');
+  const raw = async (sql, p) => (await (await driver()).query(sql, p)).rows;
+  const { loadChat } = await import('../services/live-chat.js');
+  const { assistantTurn } = await import('../services/live-chat-ai.js');
+  const turn = async (id) => assistantTurn(await loadChat(id)); // what the visitor's long poll runs first
+  // Gemini is stubbed: every other request goes through
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  let answer = { reply: 'The desk opens at 10 AM. Meanwhile you can browse profiles and send a booking request.', handoff: false };
+  globalThis.fetch = async (url, init) => {
+    if (!String(url).startsWith('https://generativelanguage.googleapis.com/')) return realFetch(url, init);
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    const text = body.generationConfig.responseSchema ? JSON.stringify(answer) : 'Hi Ana, thanks for waiting — let me check that for you.';
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  };
+  const oldKey = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = 'test-key';
+  try {
+    // off by default: nothing answers
+    const visitor = client();
+    await staff('PUT', '/settings', { liveChatHoursEnabled: '1', liveChatHours: '{}' }); // no open days: the desk is away
+    const quiet = await visitor('POST', '/site/chat', { name: 'Ana Tester', email: 'ana@example.com', message: 'Hello?' });
+    assert.equal(quiet.data.desk.assistant, false);
+    const [quietChat] = await raw('SELECT id FROM live_chats WHERE reference = $1', [quiet.data.chat.reference]);
+    await turn(quietChat.id);
+    assert.equal(calls.length, 0);
+    await visitor('POST', '/site/chat/close', {});
+    await visitor('POST', '/site/chat/end');
+
+    assert.equal((await staff('PUT', '/settings', { liveChatAi: '1', liveChatAiWait: '0' })).status, 200);
+    const started = await visitor('POST', '/site/chat', { name: 'Ana Tester', email: 'ana@example.com', message: 'When do you open?' });
+    assert.equal(started.data.desk.assistant, true);
+    assert.equal(started.data.chat.typing, true, 'typing… while the assistant writes');
+    const [chat] = await raw('SELECT id FROM live_chats WHERE reference = $1', [started.data.chat.reference]);
+    await staff('POST', `/live-chat/${chat.id}/messages`, { body: 'VIP client, secret room 7777', internal: true });
+    const first = await visitor('GET', `/site/chat/wait?after=${started.data.messages[0].id}&typing=1`);
+    const ai = first.data.messages.find((m) => m.ai);
+    assert.ok(ai, JSON.stringify(first.data));
+    assert.equal(ai.from, 'staff');
+    assert.equal(ai.body, answer.reply);
+    assert.equal(first.data.chat.typing, false);
+    assert.equal(calls.length, 1);
+    assert.ok(!JSON.stringify(calls[0]).includes('7777'), 'internal notes are never sent to the AI');
+    assert.ok(JSON.stringify(calls[0].contents).includes('When do you open?'));
+    const [{ body: stored }] = await raw("SELECT body FROM live_chat_messages WHERE chat_id = $1 AND sender = 'Assistant'", [chat.id]);
+    assert.match(stored, /^enc:v1:/);
+    // nothing new from the visitor: it doesn't answer again
+    await turn(chat.id);
+    assert.equal(calls.length, 1);
+
+    // it hands over: an internal note and it stays quiet in this chat
+    answer = { reply: 'I’ll pass this to our concierge, who will reply by email.', handoff: true, reason: 'Wants to change a booking' };
+    const sent = await visitor('POST', '/site/chat/messages', { body: 'Can you move my booking to Friday?', after: ai.id });
+    const second = await visitor('GET', `/site/chat/wait?after=${sent.data.messages.at(-1).id}&typing=1`);
+    assert.ok(second.data.messages.some((m) => m.ai && m.body === answer.reply));
+    const thread = (await staff('GET', `/live-chat/${chat.id}`)).data;
+    assert.equal(thread.chat.aiOff, true);
+    assert.equal(thread.chat.aiReplies, 2);
+    assert.ok(thread.messages.some((m) => m.internal && m.name === 'AI assistant' && m.body.includes('Wants to change a booking')));
+    assert.ok(thread.messages.some((m) => m.sender === 'Assistant' && m.name === 'AI assistant'));
+    const more = await visitor('POST', '/site/chat/messages', { body: 'Hello?', after: second.data.messages.at(-1).id });
+    assert.equal(more.data.chat.typing, false);
+    await turn(chat.id);
+    assert.equal(calls.length, 2);
+
+    // staff turn it back on; once staff reply it stops anyway
+    const on = await staff('POST', `/live-chat/${chat.id}/assistant`, { on: true });
+    assert.equal(on.data.chat.aiOff, false);
+    await staff('POST', `/live-chat/${chat.id}/messages`, { body: 'Hi Ana, Friday works.' });
+    await visitor('POST', '/site/chat/messages', { body: 'Great, thanks!' });
+    await turn(chat.id);
+    assert.equal(calls.length, 2);
+
+    // reply suggestions for staff (manage permission), and the desk can delete the AI's messages for everyone
+    const draft = await staff('POST', `/live-chat/${chat.id}/suggest`, {});
+    assert.equal(draft.status, 200, JSON.stringify(draft.data));
+    assert.match(draft.data.text, /Hi Ana/);
+    assert.ok(!JSON.stringify(calls.at(-1)).includes('7777'));
+    assert.equal((await staff('POST', `/live-chat/${chat.id}/messages/${ai.id}/delete`, { scope: 'everyone' })).status, 200);
+    assert.equal((await visitor('GET', '/site/chat')).data.messages.find((m) => m.id === ai.id).deleted, true);
+    // no message text in the audit trail or notifications
+    const [{ leaks }] = await raw("SELECT (SELECT COUNT(*) FROM audit_log WHERE summary LIKE '%Friday%') + (SELECT COUNT(*) FROM notifications WHERE body LIKE '%Friday%' OR title LIKE '%Friday%') AS leaks");
+    assert.equal(Number(leaks), 0);
+  } finally {
+    globalThis.fetch = realFetch;
+    if (oldKey === undefined) delete process.env.GEMINI_API_KEY; else process.env.GEMINI_API_KEY = oldKey;
+    await staff('PUT', '/settings', { liveChatAi: '0', liveChatAiWait: '60', liveChatHoursEnabled: '0' });
+  }
+});
+
 await check('staff two-step sign-in (authenticator app + backup codes)', async () => {
   const { totpCode } = await import('../lib/totp.js');
   const pw = 'aurelia2026';

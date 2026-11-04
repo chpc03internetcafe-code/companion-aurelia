@@ -685,6 +685,13 @@ CREATE TABLE IF NOT EXISTS live_chat_hidden (
   PRIMARY KEY (message_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS ix_live_chat_hidden_user ON live_chat_hidden(user_id);
+-- AI assistant (services/live-chat-ai.js): its replies are sender 'Assistant'. ai_off: it stays quiet in this chat
+-- (it handed over, or staff stopped it); ai_busy_until: a reply is being written (or retry after a failure).
+ALTER TABLE live_chat_messages DROP CONSTRAINT IF EXISTS live_chat_messages_sender_check;
+ALTER TABLE live_chat_messages ADD CONSTRAINT live_chat_messages_sender_check CHECK (sender IN ('Visitor','Staff','Assistant','System'));
+ALTER TABLE live_chats ADD COLUMN IF NOT EXISTS ai_off BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE live_chats ADD COLUMN IF NOT EXISTS ai_busy_until TIMESTAMPTZ NULL;
+ALTER TABLE live_chats ADD COLUMN IF NOT EXISTS ai_replies INT NOT NULL DEFAULT 0;
 
 -- Saved replies the desk can insert in a live chat. {name}, {profile} and {agent} are filled in by the CMS.
 CREATE TABLE IF NOT EXISTS live_chat_templates (

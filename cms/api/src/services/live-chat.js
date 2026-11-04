@@ -22,11 +22,13 @@
 // - Privacy: an ended chat stays readable in the visitor's browser for DEVICE_MINUTES (for the rating and transcript),
 //   then the browser no longer gets it (unless staff reopen it). The visitor can remove it from the device or delete
 //   it for good at any time. With liveChatRetentionDays set, chats with no activity for that long are deleted.
+// - An AI assistant (sender 'Assistant', services/live-chat-ai.js) can answer while the desk is away or busy.
 import crypto from 'node:crypto';
 import { one, params, q, run, tx } from '../db/index.js';
 import { HttpError } from '../lib/http.js';
 import { readCookie, sha256, writeCookie } from '../lib/auth.js';
 import { encryptText } from '../lib/encryption.js';
+import { geminiConfigured } from '../lib/gemini.js';
 import { newReference } from '../lib/refs.js';
 import { poke } from '../lib/longpoll.js';
 import { notifyStaff } from '../lib/notifications.js';
@@ -107,11 +109,12 @@ export function deskHours(settings, now = new Date()) {
   return { open: false, opensAt: null };
 }
 
-/** What the chat window shows about the desk: online now, open hours, and the away message. */
+/** What the chat window shows about the desk: online now, open hours, the away message, and whether an AI may answer. */
 export async function deskInfo() {
   const s = await loadSettings();
   const h = deskHours(s);
-  return { online: h.open && (await deskOnline()), open: h.open, opensAt: h.opensAt, awayMessage: h.open ? '' : s.liveChatOfflineMessage || '' };
+  return { online: h.open && (await deskOnline()), open: h.open, opensAt: h.opensAt, awayMessage: h.open ? '' : s.liveChatOfflineMessage || '',
+    assistant: s.liveChatAi === '1' && geminiConfigured() };
 }
 
 /** Starts a chat for this browser with its first message, and sets the cookie. */
@@ -134,7 +137,8 @@ export async function startChat(req, res, { name, email, message, page, profileI
 }
 
 const visitorShape = (m, cards) => ({
-  id: m.id, from: m.sender === 'Visitor' ? 'me' : m.sender === 'Staff' ? 'staff' : 'system', name: m.sender === 'Staff' ? 'Concierge' : null, body: m.body, at: m.createdAt,
+  id: m.id, from: m.sender === 'Visitor' ? 'me' : ['Staff', 'Assistant'].includes(m.sender) ? 'staff' : 'system',
+  name: m.sender === 'Staff' ? 'Concierge' : m.sender === 'Assistant' ? 'Virtual assistant' : null, ai: m.sender === 'Assistant', body: m.body, at: m.createdAt,
   card: m.profileId ? cards.get(m.profileId) || null : null, // null when the profile is no longer published
   deleted: !!m.deletedAt, // deleted for everyone: body is ''
 });
@@ -177,11 +181,12 @@ export async function visitorMessages(c, after = 0, { onlyNew = false, known = {
 
 // ---------- Both sides ----------
 /**
- * Adds a message. sender: 'Visitor' | 'Staff' (with admin) | 'System'. profileId: a profile card (staff), the text is
- * then optional. internal: a staff note, only seen in the CMS (doesn't count as a reply or change the chat's order).
+ * Adds a message. sender: 'Visitor' | 'Staff' (with admin) | 'Assistant' (the AI) | 'System'. profileId: a profile
+ * card (staff), the text is then optional. internal: a staff note, only seen in the CMS (doesn't count as a reply or
+ * change the chat's order).
  */
 export async function addMessage(c, sender, text, admin = null, { profileId = null, internal = false } = {}) {
-  const body = sender === 'System' ? text : profileId ? String(text ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_LENGTH) : cleanText(text);
+  const body = sender === 'System' ? text : profileId || sender === 'Assistant' ? String(text ?? '').replace(/\r\n/g, '\n').trim().slice(0, MAX_LENGTH) : cleanText(text);
   const note = sender === 'Staff' && internal && !profileId;
   const m = await one('INSERT INTO live_chat_messages (chat_id, sender, author_id, author, body, profile_id, internal) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
     [c.id, sender, admin?.id || null, admin?.name?.slice(0, 150) || null, encryptText(body), profileId, note]);
@@ -190,8 +195,10 @@ export async function addMessage(c, sender, text, admin = null, { profileId = nu
     poke(TOPIC);
     return m.id;
   }
-  const seen = sender === 'Visitor' ? ', visitor_seen_message_id = $2, visitor_seen_at = now(), visitor_typing_until = NULL' : sender === 'Staff' ? ', staff_seen_message_id = $2, staff_typing_until = NULL' : '';
-  await run(`UPDATE live_chats SET last_message_at = now(), updated_at = now()${seen} WHERE id = $1`, seen ? [c.id, m.id] : [c.id]);
+  const seen = sender === 'Visitor' ? ', visitor_seen_message_id = $2, visitor_seen_at = now(), visitor_typing_until = NULL'
+    : sender === 'Staff' ? ', staff_seen_message_id = $2, staff_typing_until = NULL'
+      : sender === 'Assistant' ? ', staff_typing_until = NULL' : '';
+  await run(`UPDATE live_chats SET last_message_at = now(), updated_at = now()${seen} WHERE id = $1`, seen.includes('$2') ? [c.id, m.id] : [c.id]);
   poke(TOPIC);
 
   if (sender === 'Visitor') {
@@ -256,7 +263,7 @@ export async function sendTranscript(c, email) {
 
 /**
  * Deletes one message. by: 'Visitor' | 'Staff' (with admin). scope 'me': hidden for the visitor, or for this staff
- * member only. scope 'everyone': only for your own side's messages (staff: replies and notes); the text is erased
+ * member only. scope 'everyone': only for your own side's messages (staff: replies, notes and the AI's); the text is erased
  * and both sides see that a message was deleted.
  */
 export async function deleteMessage(c, messageId, by, scope, admin = null) {
@@ -268,7 +275,7 @@ export async function deleteMessage(c, messageId, by, scope, admin = null) {
     else await run('INSERT INTO live_chat_hidden (message_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [m.id, admin.id]);
     return false;
   }
-  if (m.sender !== by) throw new HttpError(403, 'You can only delete your own messages for everyone.');
+  if (m.sender !== by && !(by === 'Staff' && m.sender === 'Assistant')) throw new HttpError(403, 'You can only delete your own messages for everyone.');
   if (m.deletedAt) return false;
   await run("UPDATE live_chat_messages SET body = '', profile_id = NULL, deleted_at = now(), deleted_by = $2 WHERE id = $1", [m.id, by]);
   await run('UPDATE live_chats SET deletions = deletions + 1, updated_at = now() WHERE id = $1', [c.id]);
@@ -321,7 +328,8 @@ export async function reopenChat(c, admin) {
 
 // ---------- Staff side ----------
 const staffShape = (m) => ({
-  id: m.id, sender: m.sender, internal: !!m.internal, deleted: !!m.deletedAt, deletedBy: m.deletedBy || null, name: m.sender === 'Staff' ? m.author || 'Concierge' : m.sender === 'Visitor' ? null : 'System', body: m.body, at: m.createdAt,
+  id: m.id, sender: m.sender, internal: !!m.internal, deleted: !!m.deletedAt, deletedBy: m.deletedBy || null,
+  name: m.sender === 'Staff' ? m.author || 'Concierge' : m.sender === 'Assistant' ? 'AI assistant' : m.sender === 'Visitor' ? null : 'System', body: m.body, at: m.createdAt,
   profile: m.profileId ? { id: m.profileId, name: m.profileName || 'Removed profile', slug: m.profileSlug, photoUrl: m.profilePhoto } : null,
 });
 
@@ -397,6 +405,9 @@ export async function staffThread(c, after = 0, viewerId = null, markSeen = true
       visitorOnline: c.status === 'Open' && !!c.visitorSeenAt && Date.now() - new Date(c.visitorSeenAt).getTime() < 60_000,
       visitorTyping: c.status === 'Open' && !!c.visitorTypingUntil && new Date(c.visitorTypingUntil) > new Date(),
       rating: c.rating || null, ratingComment: c.ratingComment || '', ratedAt: c.ratedAt, transcriptSentAt: c.transcriptSentAt,
+      // AI: ready = GEMINI_API_KEY set (reply suggestions); on = the assistant answers visitors; aiOff = not in this chat
+      ai: { ready: geminiConfigured(), on: geminiConfigured() && (await loadSettings()).liveChatAi === '1' },
+      aiOff: !!c.aiOff, aiReplies: c.aiReplies || 0,
     },
     messages: rows.map(staffShape),
     deleted: await deletedIds(c.id),

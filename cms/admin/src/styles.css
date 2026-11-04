@@ -572,6 +572,7 @@ button.stat:hover, a.stat:hover { border-color: var(--primary); }
 .lc-compose.is-note .lc-compose-mode button.on { border-color: #e9cf8f; color: var(--amber); }
 .chat-msg.lc-note-msg { align-self: center; align-items: center; max-width: 92%; }
 .chat-msg.lc-note-msg .chat-bubble { border-radius: 8px; background: #fff8e6; border: 1px dashed #e0bf6e; }
+.chat-msg.lc-ai-msg .chat-bubble { background: var(--primary-soft); color: var(--text); border: 1px dashed var(--primary); }
 .lc-note-tag { display: block; margin-bottom: 2px; color: var(--amber); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
 .lc-typing .chat-bubble { display: inline-flex; gap: 4px; padding: 11px 12px; }
 .lc-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: lc-dots 1.2s infinite ease-in-out; }

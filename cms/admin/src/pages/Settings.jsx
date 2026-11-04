@@ -7,7 +7,7 @@ import { ErrorBox, Field, Loading, Modal, PageHead, Pill, Tabs, Toggle, useActio
 
 const GROUPS = {
   general: ['siteName', 'logoText', 'logoSubtext', 'tagline', 'about', 'email', 'phone', 'messaging', 'hours', 'instagramUrl', 'xUrl', 'telegramUrl', 'whatsappUrl', 'currency'],
-  homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText', 'liveChatEnabled', 'liveChatGreeting', 'liveChatHoursEnabled', 'liveChatHours', 'liveChatOfflineMessage', 'liveChatTranscripts', 'liveChatRetentionDays'],
+  homepage: ['heroTitle', 'heroText', 'announcement1', 'announcement2', 'announcement3', 'ageGateEnabled', 'ageGateText', 'liveChatEnabled', 'liveChatGreeting', 'liveChatHoursEnabled', 'liveChatHours', 'liveChatOfflineMessage', 'liveChatTranscripts', 'liveChatRetentionDays', 'liveChatAi', 'liveChatAiWait', 'liveChatAiInstructions'],
   booking: ['autoConfirm', 'bookingLeadHours', 'bookingWindowDays', 'cancelCutoffHours', 'rescheduleLimit', 'slotMinutes', 'bufferMinutes', 'bookingPolicy'],
   security: ['staffIdleMinutes', 'staffTwoStepRequired'],
 };
@@ -254,6 +254,27 @@ export default function Settings() {
                     </Field>
                   </>
                 )}
+                <div className="section-title">AI assistant</div>
+                {!data.ai?.configured ? (
+                  <p className="muted">Not set up: add a Google Gemini key (GEMINI_API_KEY) to the server’s environment to let an AI answer while the desk is away, and to get reply suggestions in Live chat.</p>
+                ) : <>
+                  <Toggle {...flag(form, setForm, 'liveChatAi')} label="Let the AI assistant answer visitors"
+                    hint={`Google Gemini (${data.ai.model}). It answers from your settings, FAQs, locations and published profiles, can’t book or promise anything, and hands the chat to the desk (with a notification) when it can’t help. It stops once staff reply. Visitors see that it’s AI; their messages are sent to Google`} />
+                  {form.liveChatAi === '1' && <>
+                    <Field label="When the desk is online" error={errors.liveChatAiWait} hint="Outside desk hours, or when nobody who answers chats is signed in, it answers straight away">
+                      <select value={form.liveChatAiWait} onChange={set('liveChatAiWait')}>
+                        <option value="0">Don’t answer — only when the desk is away</option>
+                        <option value="30">Answer if nobody replies within 30 seconds</option>
+                        <option value="60">Answer if nobody replies within 1 minute</option>
+                        <option value="120">Answer if nobody replies within 2 minutes</option>
+                        <option value="300">Answer if nobody replies within 5 minutes</option>
+                      </select>
+                    </Field>
+                  </>}
+                  <Field label="Instructions for the AI" error={errors.liveChatAiInstructions} hint="Optional: tone, things to mention or avoid. Also used for reply suggestions">
+                    <textarea rows={4} maxLength={2000} value={form.liveChatAiInstructions} onChange={set('liveChatAiInstructions')} placeholder="e.g. Always mention that first-time clients get a call from the concierge." />
+                  </Field>
+                </>}
               </div>
             </div>
           )}

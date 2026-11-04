@@ -190,7 +190,7 @@ export function liveChatReply(site, c) {
 // rows: { sender, body, createdAt, profileName, profileSlug }, without staff notes.
 const phTime = (at) => new Date(at).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 export function liveChatTranscript(site, c, to, rows) {
-  const who = (m) => (m.sender === 'Visitor' ? firstName(c.visitorName) : m.sender === 'Staff' ? 'Concierge' : '');
+  const who = (m) => (m.sender === 'Visitor' ? firstName(c.visitorName) : m.sender === 'Staff' ? 'Concierge' : m.sender === 'Assistant' ? 'Virtual assistant (AI)' : '');
   const card = (m) => (m.profileName ? `Profile: ${m.profileName}${siteUrl() && m.profileSlug ? ` — ${siteUrl()}/companions/${m.profileSlug}` : ''}` : '');
   const lines = rows.map((m) => ({ who: who(m), at: phTime(m.createdAt), body: [card(m), m.body].filter(Boolean).join('\n') }));
   const html = lines.map((l) => (l.who

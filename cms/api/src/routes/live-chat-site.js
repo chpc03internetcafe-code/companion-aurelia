@@ -7,6 +7,7 @@ import { rateLimit } from '../lib/auth.js';
 import { logEvent } from '../lib/audit.js';
 import { longPoll } from '../lib/longpoll.js';
 import { loadSettings } from '../services/settings.js';
+import { assistantTurn, assistantTyping } from '../services/live-chat-ai.js';
 import { addMessage, closeChat, deleteChat, deleteMessage, deskHours, purgeOldChats, deskInfo, forgetChat, MAX_LENGTH, rateChat, sendTranscript, setVisitorTyping, startChat, TOPIC, visitorChat, visitorMessages } from '../services/live-chat.js';
 
 const router = Router();
@@ -32,6 +33,8 @@ router.get('/', wrap(async (req, res) => {
 // Long poll: new messages after ?after, or a change of status, read receipt (?seen), typing (?typing=0|1) or
 // messages deleted for everyone (?del: how many the browser knows of);
 // { messages: [] } after ~20 s with none. ?bg=1 while the tab is hidden: delivered, but not marked as read.
+// The AI assistant answers from here when it's due (services/live-chat-ai.js), so only to a visitor still on the page;
+// when it will be due within the poll, the poll ends then so the next one answers.
 router.get('/wait', wrap(async (req, res) => {
   await enabled();
   const c = await myChat(req);
@@ -42,7 +45,8 @@ router.get('/wait', wrap(async (req, res) => {
     deletions: req.query.del === undefined ? undefined : Number(req.query.del) || 0,
   };
   const opts = { onlyNew: true, known, background: req.query.bg === '1' };
-  const r = await longPoll(req, res, TOPIC, () => visitorMessages(c, after, opts), { everyMs: 1_500 });
+  const due = await assistantTurn(c);
+  const r = await longPoll(req, res, TOPIC, () => visitorMessages(c, after, opts), { everyMs: 1_500, waitMs: due ? Math.min(20_000, due + 500) : 20_000 });
   if (res.writableEnded) return;
   res.json(r || await visitorMessages(c, after, { background: opts.background }));
 }));
@@ -68,6 +72,7 @@ router.post('/', wrap(async (req, res) => {
   const c = await startChat(req, res, { ...data, page: data.page?.startsWith('/') ? data.page : null });
   await logEvent({ action: 'Live chat started', module: 'inquiries', entityType: 'Live chat', entityId: c.id, entityLabel: c.reference,
     summary: `${data.name} started a live chat`, actorType: 'Visitor', userName: data.name, userEmail: data.email }, req);
+  await assistantTyping(c).catch(() => {});
   const desk = await deskInfo();
   res.status(201).json({ ...(await visitorMessages(c, 0)), online: desk.online, desk });
 }));
@@ -79,6 +84,7 @@ router.post('/messages', wrap(async (req, res) => {
   if (c.status !== 'Open') throw new HttpError(409, 'This chat has ended. Start a new one any time.');
   await rateLimit(`livechat-msg:${c.id}`, 40, 10 * 60000);
   await addMessage(c, 'Visitor', req.body.body);
+  await assistantTyping(c).catch(() => {}); // the AI is about to answer: "typing…" straight away
   res.status(201).json(await visitorMessages(c, req.body.after));
 }));
 

@@ -7,6 +7,7 @@ import { insertRow, reorder, updateRow, validate } from '../lib/validate.js';
 import { THEME_IDS, THEME_MODES, themeList } from '../lib/themes.js';
 import { mailConfigured, sendMail } from '../lib/mailer.js';
 import { testEmail } from '../lib/emails.js';
+import { geminiConfigured, geminiModel } from '../lib/gemini.js';
 import { loadSettings } from '../services/settings.js';
 
 const router = Router();
@@ -57,6 +58,9 @@ const settingsSchema = {
   liveChatOfflineMessage: { type: 'string', max: 400 },
   liveChatTranscripts: flag,
   liveChatRetentionDays: { type: 'enum', values: ['0', '30', '90', '180', '365'], label: 'Keep chats' },
+  liveChatAi: flag,
+  liveChatAiWait: { type: 'enum', values: ['0', '30', '60', '120', '300'], label: 'Wait for the desk' },
+  liveChatAiInstructions: { type: 'string', max: 2000, label: 'Instructions' },
   autoConfirm: flag,
   bookingLeadHours: numberText(0, 168, 'Lead time'),
   bookingWindowDays: numberText(1, 365, 'Booking window'),
@@ -74,6 +78,7 @@ const listFees = () => q('SELECT f.*, l.name AS location_name FROM fees f LEFT J
 const everything = async () => ({
   settings: await loadSettings(), themes: themeList(), fees: await listFees(),
   email: { configured: mailConfigured(), sender: process.env.GMAIL_USER || null },
+  ai: { configured: geminiConfigured(), model: geminiConfigured() ? geminiModel() : null },
 });
 
 router.get('/', wrap(async (_req, res) => res.json(await everything())));

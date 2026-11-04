@@ -7,6 +7,8 @@ import { SAMPLE_TEMPLATES } from '../lib/chat-templates.js';
 import { logEvent } from '../lib/audit.js';
 import { one, q, run } from '../db/index.js';
 import { longPoll } from '../lib/longpoll.js';
+import { rateLimit } from '../lib/auth.js';
+import { setAssistant, suggestReply } from '../services/live-chat-ai.js';
 import { addMessage, chatAlerts, chatStats, closeChat, deleteMessage, deletionsTotal, latestMessageId, listChats, loadChat, purgeOldChats, reopenChat, setStaffTyping, staffThread, TOPIC, typingChats } from '../services/live-chat.js';
 
 const router = Router();
@@ -120,6 +122,22 @@ router.post('/:id/messages/:messageId/delete', wrap(async (req, res) => {
   if (await deleteMessage(c, req.params.messageId, 'Staff', req.body.scope, req.admin)) {
     await log(req, c, 'Live chat message deleted', `Deleted a message for everyone in the live chat with ${c.visitorName}`);
   }
+  res.json(await staffThread(await loadChat(c.id), 0, req.admin.id));
+}));
+
+// A suggested reply from the AI for the composer (never sent by itself): { text }.
+router.post('/:id/suggest', wrap(async (req, res) => {
+  const c = await loadChat(idParam(req));
+  await rateLimit(`livechat-suggest:${req.admin.id}`, 30, 10 * 60000);
+  res.json({ text: await suggestReply(c) });
+}));
+
+// { on: true | false } — lets the AI assistant answer this chat again, or stops it.
+router.post('/:id/assistant', wrap(async (req, res) => {
+  const c = await loadChat(idParam(req));
+  await setAssistant(c, req.body.on === true);
+  await log(req, c, req.body.on === true ? 'Live chat assistant on' : 'Live chat assistant off',
+    `${req.body.on === true ? 'Let the AI assistant answer' : 'Stopped the AI assistant in'} the live chat with ${c.visitorName}`);
   res.json(await staffThread(await loadChat(c.id), 0, req.admin.id));
 }));
 

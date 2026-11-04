@@ -501,6 +501,7 @@ main#main { min-height: 100vh; }
 .lc-start .chat-msg { max-width: 100%; }
 .lc-center { text-align: center; margin-top: 40px; }
 .lc-system { align-self: center; margin: 4px 0; color: var(--muted); font-size: 0.8rem; text-align: center; }
+.lc-ai-tag { margin-left: 5px; padding: 0 5px; border-radius: 4px; background: var(--primary-soft); color: var(--primary); font-size: 0.68rem; letter-spacing: 0.04em; }
 .lc-form { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; padding: 12px; border-top: 1px solid var(--line); }
 .lc-form textarea { resize: none; min-height: 46px; max-height: 140px; }
 .lc-send { width: 46px; height: 46px; padding: 0; display: grid; place-items: center; }
