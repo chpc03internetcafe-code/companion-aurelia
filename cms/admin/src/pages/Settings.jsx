@@ -264,6 +264,7 @@ export default function Settings() {
                     <Field label="When the desk is online" error={errors.liveChatAiWait} hint="Outside desk hours, or when nobody who answers chats is signed in, it answers straight away">
                       <select value={form.liveChatAiWait} onChange={set('liveChatAiWait')}>
                         <option value="0">Don’t answer — only when the desk is away</option>
+                        <option value="now">Answer right away, even when the desk is online</option>
                         <option value="30">Answer if nobody replies within 30 seconds</option>
                         <option value="60">Answer if nobody replies within 1 minute</option>
                         <option value="120">Answer if nobody replies within 2 minutes</option>

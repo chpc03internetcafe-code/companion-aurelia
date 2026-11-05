@@ -2,7 +2,7 @@
 //
 // - Off unless Settings → Live chat → AI assistant is on (liveChatAi) and GEMINI_API_KEY is set.
 // - It answers only while nobody at the desk is: outside desk hours, when no staff member is online, or (setting
-//   liveChatAiWait) when an online desk hasn't replied within that many seconds. Once staff reply in a chat, or the
+//   liveChatAiWait) when an online desk hasn't replied within that many seconds, or right away ('now'). Once staff reply in a chat, or the
 //   assistant hands it over (live_chats.ai_off), it stays quiet in that chat. Staff can also turn it off per chat.
 // - It runs from the visitor's own long poll (/api/site/chat/wait), so it only answers someone who is still on the
 //   page, and needs no background job on Vercel. ai_busy_until claims the chat so two polls can't both answer.
@@ -124,7 +124,7 @@ export async function assistantDueIn(c) {
   const last = await one(`SELECT sender, created_at FROM live_chat_messages WHERE chat_id = $1 AND NOT internal AND sender <> 'System' AND deleted_at IS NULL
     ORDER BY id DESC LIMIT 1`, [c.id]);
   if (last?.sender !== 'Visitor' || await staffReplied(c.id)) return null;
-  if (!deskHours(s).open || !(await deskOnline())) return 0;
+  if (s.liveChatAiWait === 'now' || !deskHours(s).open || !(await deskOnline())) return 0;
   const wait = Number(s.liveChatAiWait) || 0; // 0: never while someone is online
   if (!wait) return null;
   return Math.max(0, new Date(last.createdAt).getTime() + wait * 1000 - Date.now());

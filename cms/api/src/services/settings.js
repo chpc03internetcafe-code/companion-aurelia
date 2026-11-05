@@ -49,7 +49,7 @@ export const defaultSettings = {
   liveChatOfflineMessage: 'We’re away right now. Leave your message and email, and we’ll reply as soon as we’re back.',
   // AI assistant (Google Gemini, needs GEMINI_API_KEY): answers while the desk is away, hands over when it can't help
   liveChatAi: '0',
-  liveChatAiWait: '60',       // seconds an online desk has to reply before the assistant answers (0 = only when away)
+  liveChatAiWait: '60',       // seconds an online desk has to reply before the assistant answers (0 = only when away, 'now' = right away)
   liveChatAiInstructions: '', // extra instructions for the assistant and reply suggestions
   bookingPolicy: 'Requests are confirmed by our concierge, usually within an hour during desk hours. You can cancel or reschedule online up to the cut-off shown on your booking. Fees are shown before you confirm and are settled directly as agreed with the concierge.',
   // CMS sign-out after this many minutes without activity (0 = never)

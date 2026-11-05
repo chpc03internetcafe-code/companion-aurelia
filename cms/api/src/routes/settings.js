@@ -59,7 +59,7 @@ const settingsSchema = {
   liveChatTranscripts: flag,
   liveChatRetentionDays: { type: 'enum', values: ['0', '30', '90', '180', '365'], label: 'Keep chats' },
   liveChatAi: flag,
-  liveChatAiWait: { type: 'enum', values: ['0', '30', '60', '120', '300'], label: 'Wait for the desk' },
+  liveChatAiWait: { type: 'enum', values: ['0', 'now', '30', '60', '120', '300'], label: 'Wait for the desk' },
   liveChatAiInstructions: { type: 'string', max: 2000, label: 'Instructions' },
   autoConfirm: flag,
   bookingLeadHours: numberText(0, 168, 'Lead time'),
