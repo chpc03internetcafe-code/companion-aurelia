@@ -3,7 +3,7 @@
 // Prompts and replies are never logged here: they contain visitors' messages.
 import { HttpError } from './http.js';
 
-const MODEL = () => process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const MODEL = () => process.env.GEMINI_MODEL || 'gemini-flash-lite-latest';
 const TIMEOUT_MS = 20_000;
 
 export const geminiConfigured = () => !!process.env.GEMINI_API_KEY;
